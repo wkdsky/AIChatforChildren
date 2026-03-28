@@ -291,7 +291,7 @@ class KnowledgeRepository:
     def list_documents(
         self,
         search: Optional[str] = None,
-        audience: Optional[str] = None,
+        age_band: Optional[str] = None,
         review_status: Optional[str] = None,
     ) -> List[Dict[str, object]]:
         conn = self._connect()
@@ -322,9 +322,16 @@ class KnowledgeRepository:
                     )
                     params.extend([keyword, keyword, keyword, keyword])
 
-                if (audience or "").strip():
-                    where_clauses.append("d.audience = %s")
-                    params.append((audience or "").strip())
+                if (age_band or "").strip():
+                    where_clauses.append(
+                        """
+                        (
+                            JSON_CONTAINS(d.age_bands, JSON_QUOTE(%s))
+                            OR JSON_CONTAINS(d.age_bands, JSON_QUOTE('all'))
+                        )
+                        """
+                    )
+                    params.append((age_band or "").strip())
 
                 if (review_status or "").strip():
                     where_clauses.append("d.review_status = %s")

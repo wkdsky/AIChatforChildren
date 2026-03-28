@@ -11,12 +11,14 @@ class KnowledgeController
 {
     private string $serviceUrl;
     private int $requestTimeout = 120;
+    private string $projectRoot;
 
     public function __construct()
     {
         $host = $_ENV['CHROMA_SERVICE_HOST'] ?? '127.0.0.1';
         $port = $_ENV['CHROMA_SERVICE_PORT'] ?? '4001';
         $this->serviceUrl = "http://{$host}:{$port}";
+        $this->projectRoot = dirname(__DIR__, 2);
     }
 
     /**
@@ -154,6 +156,127 @@ class KnowledgeController
     {
         $decoded = json_decode(file_get_contents('php://input'), true);
         return is_array($decoded) ? $decoded : [];
+    }
+
+    private function getKnowledgeRebuildPaths(): array
+    {
+        $storageDir = $this->projectRoot . '/storage/knowledge';
+        return [
+            'service_dir' => $this->projectRoot . '/services/chroma',
+            'script' => $this->projectRoot . '/services/chroma/rebuild_kb.py',
+            'status' => $storageDir . '/rebuild_status.json',
+            'log' => $storageDir . '/rebuild.log',
+        ];
+    }
+
+    private function readJsonFile(string $path): array
+    {
+        if (!is_file($path)) {
+            return [];
+        }
+
+        $raw = file_get_contents($path);
+        if ($raw === false || $raw === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    private function writeJsonFile(string $path, array $payload): void
+    {
+        $directory = dirname($path);
+        if (!is_dir($directory)) {
+            mkdir($directory, 0775, true);
+        }
+
+        file_put_contents(
+            $path,
+            json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
+        );
+    }
+
+    private function isProcessRunning(?int $pid): bool
+    {
+        if (!function_exists('exec')) {
+            return false;
+        }
+
+        if (!$pid || $pid <= 0) {
+            return false;
+        }
+
+        $output = [];
+        $exitCode = 1;
+        @exec('ps -p ' . (int) $pid . ' -o pid=', $output, $exitCode);
+        if ($exitCode !== 0) {
+            return false;
+        }
+
+        foreach ($output as $line) {
+            if (trim((string) $line) === (string) $pid) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function readLogTail(string $path, int $maxLines = 40): array
+    {
+        if (!is_file($path)) {
+            return [];
+        }
+
+        $lines = @file($path, FILE_IGNORE_NEW_LINES);
+        if ($lines === false) {
+            return [];
+        }
+
+        $tail = array_slice($lines, -1 * $maxLines);
+        return array_values(array_filter(array_map('trim', $tail), static fn ($line) => $line !== ''));
+    }
+
+    private function getKnowledgeRebuildStatusPayload(): array
+    {
+        $paths = $this->getKnowledgeRebuildPaths();
+        $status = $this->readJsonFile($paths['status']);
+
+        $payload = [
+            'status' => 'idle',
+            'message' => '未开始重建任务。',
+            'started_at' => null,
+            'finished_at' => null,
+            'updated_at' => null,
+            'pid' => null,
+            'scanned' => 0,
+            'inserted' => 0,
+            'repaired' => 0,
+            'skipped' => 0,
+            'failed' => 0,
+            'last_file' => null,
+            'log_lines' => $this->readLogTail($paths['log']),
+        ];
+
+        if (!empty($status)) {
+            $payload = array_merge($payload, $status);
+        }
+
+        $pid = isset($payload['pid']) ? (int) $payload['pid'] : null;
+        $isRunning = $this->isProcessRunning($pid);
+        $payload['is_running'] = $isRunning;
+
+        if (in_array($payload['status'], ['queued', 'running'], true) && !$isRunning) {
+            if (empty($payload['finished_at'])) {
+                $payload['status'] = 'failed';
+                $payload['message'] = '重建进程已退出，请检查日志。';
+                $payload['finished_at'] = date('c');
+                $this->writeJsonFile($paths['status'], $payload);
+            }
+        }
+
+        return $payload;
     }
 
     /**
@@ -300,9 +423,9 @@ class KnowledgeController
             $params[] = 'search=' . urlencode($search);
         }
 
-        $audience = isset($_GET['audience']) ? trim((string)$_GET['audience']) : '';
-        if ($audience !== '') {
-            $params[] = 'audience=' . urlencode($audience);
+        $ageBand = isset($_GET['age_band']) ? trim((string)$_GET['age_band']) : '';
+        if ($ageBand !== '') {
+            $params[] = 'age_band=' . urlencode($ageBand);
         }
 
         $reviewStatus = isset($_GET['review_status']) ? trim((string)$_GET['review_status']) : '';
@@ -605,6 +728,110 @@ class KnowledgeController
                 'service_port' => $_ENV['CHROMA_SERVICE_PORT'] ?? '4001',
             ]
         ], 200);
+    }
+
+    public function rebuildStatus(): void
+    {
+        $this->jsonResponse([
+            'success' => true,
+            'job' => $this->getKnowledgeRebuildStatusPayload(),
+        ], 200);
+    }
+
+    public function rebuildKnowledgeBase(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->jsonResponse(['success' => false, 'error' => 'Method not allowed'], 405);
+        }
+
+        $this->verifyCsrf();
+
+        if (!function_exists('exec')) {
+            $this->jsonResponse([
+                'success' => false,
+                'error' => 'PHP exec() is disabled. Cannot start rebuild task from the admin page.',
+            ], 500);
+        }
+
+        $paths = $this->getKnowledgeRebuildPaths();
+        if (!is_file($paths['script'])) {
+            $this->jsonResponse([
+                'success' => false,
+                'error' => 'Rebuild script not found: ' . $paths['script'],
+            ], 500);
+        }
+
+        $currentJob = $this->getKnowledgeRebuildStatusPayload();
+        if (!empty($currentJob['is_running'])) {
+            $this->jsonResponse([
+                'success' => false,
+                'error' => 'A rebuild task is already running.',
+                'job' => $currentJob,
+            ], 409);
+        }
+
+        $pythonPath = trim((string) ($_ENV['CHROMA_PYTHON_PATH'] ?? 'python3'));
+        if ($pythonPath === '') {
+            $pythonPath = 'python3';
+        }
+
+        $startedAt = date('c');
+        $queuedStatus = [
+            'status' => 'queued',
+            'message' => '重建任务已排队，等待启动。',
+            'started_at' => $startedAt,
+            'finished_at' => null,
+            'updated_at' => $startedAt,
+            'pid' => null,
+            'scanned' => 0,
+            'inserted' => 0,
+            'repaired' => 0,
+            'skipped' => 0,
+            'failed' => 0,
+            'last_file' => null,
+        ];
+
+        $this->writeJsonFile($paths['status'], $queuedStatus);
+        file_put_contents($paths['log'], '');
+
+        $command = sprintf(
+            'cd %s && nohup %s %s --status-file %s > %s 2>&1 & echo $!',
+            escapeshellarg($paths['service_dir']),
+            escapeshellarg($pythonPath),
+            escapeshellarg($paths['script']),
+            escapeshellarg($paths['status']),
+            escapeshellarg($paths['log'])
+        );
+
+        $output = [];
+        $exitCode = 1;
+        @exec($command, $output, $exitCode);
+
+        $pid = isset($output[0]) ? (int) trim((string) $output[0]) : 0;
+        if ($exitCode !== 0 || $pid <= 0) {
+            $queuedStatus['status'] = 'failed';
+            $queuedStatus['message'] = '无法启动重建进程，请检查 PHP exec/nohup 权限。';
+            $queuedStatus['finished_at'] = date('c');
+            $this->writeJsonFile($paths['status'], $queuedStatus);
+
+            $this->jsonResponse([
+                'success' => false,
+                'error' => $queuedStatus['message'],
+                'job' => $queuedStatus,
+            ], 500);
+        }
+
+        $queuedStatus['pid'] = $pid;
+        $queuedStatus['status'] = 'running';
+        $queuedStatus['message'] = '知识库重建任务已启动。';
+        $queuedStatus['updated_at'] = date('c');
+        $this->writeJsonFile($paths['status'], $queuedStatus);
+
+        $this->jsonResponse([
+            'success' => true,
+            'message' => '知识库重建任务已启动。',
+            'job' => $queuedStatus,
+        ], 202);
     }
 
     /**

@@ -227,6 +227,20 @@ class AppRouter
             $controller->rename();
         });
 
+        $router->get('/api/knowledge/rebuild/status', function () {
+            Middleware::requireAuth();
+            Middleware::requireAdmin();
+            $controller = new KnowledgeController();
+            $controller->rebuildStatus();
+        });
+
+        $router->post('/api/knowledge/rebuild', function () {
+            Middleware::requireAuth();
+            Middleware::requireAdmin();
+            $controller = new KnowledgeController();
+            $controller->rebuildKnowledgeBase();
+        });
+
         $router->get('/api/knowledge/search', function () {
             Middleware::requireAuth();
             $controller = new KnowledgeController();

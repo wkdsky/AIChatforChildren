@@ -1229,11 +1229,11 @@ async def upload_file(
 @app.get("/api/files", response_model=FileListResponse)
 async def list_files(
     search: Optional[str] = Query(None, description="Search in document title/filename and chunk content"),
-    audience: Optional[str] = Query(None, description="Filter by document audience"),
+    age_band: Optional[str] = Query(None, description="Filter by document age band"),
     review_status: Optional[str] = Query(None, description="Filter by review status"),
 ):
     repository = get_repository()
-    documents = repository.list_documents(search=search, audience=audience, review_status=review_status)
+    documents = repository.list_documents(search=search, age_band=age_band, review_status=review_status)
     files = [to_file_info(item, chunk_count=int(item.get("chunk_count") or 0)) for item in documents]
     return FileListResponse(success=True, files=files, total=len(files))
 

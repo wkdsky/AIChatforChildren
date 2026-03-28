@@ -121,6 +121,12 @@ $baseUrl = Helper::url('');
             border: 1px solid #f5b3ae;
         }
 
+        .kb-alert.success {
+            background: #e8f7ee;
+            color: #1e7d45;
+            border: 1px solid #93d3aa;
+        }
+
         .kb-grid {
             display: grid;
             gap: 20px;
@@ -348,6 +354,46 @@ $baseUrl = Helper::url('');
             border-radius: 12px;
             color: #334e68;
             line-height: 1.6;
+        }
+
+        .kb-job-card {
+            border: 1px solid #dbe5f0;
+            background: linear-gradient(180deg, #fbfdff 0%, #f4f8ff 100%);
+        }
+
+        .kb-job-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .kb-job-metric {
+            border: 1px solid #e6edf5;
+            border-radius: 12px;
+            background: #fff;
+            padding: 12px 14px;
+        }
+
+        .kb-job-metric strong {
+            display: block;
+            margin-top: 6px;
+            color: #102a43;
+            font-size: 20px;
+        }
+
+        .kb-log-box {
+            margin-top: 16px;
+            background: #102a43;
+            color: #d9e2ec;
+            border-radius: 12px;
+            padding: 14px 16px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            max-height: 280px;
+            overflow: auto;
         }
 
         .kb-summary-grid {
@@ -744,6 +790,22 @@ $baseUrl = Helper::url('');
             serviceMissingEndpoints: [],
             maxFileSizeFormatted: '20MB',
             maxFileSize: 20 * 1024 * 1024,
+            rebuild: {
+                status: 'idle',
+                message: '未开始重建任务。',
+                startedAt: null,
+                finishedAt: null,
+                updatedAt: null,
+                pid: null,
+                isRunning: false,
+                scanned: 0,
+                inserted: 0,
+                repaired: 0,
+                skipped: 0,
+                failed: 0,
+                lastFile: null,
+                logLines: [],
+            },
             view: 'documents',
             advancedMode: false,
             upload: {
@@ -755,7 +817,7 @@ $baseUrl = Helper::url('');
             },
             docFilters: {
                 search: '',
-                audience: '',
+                ageBand: '',
                 reviewStatus: '',
             },
             chunkFilters: {
@@ -769,6 +831,7 @@ $baseUrl = Helper::url('');
             },
             selectedChunkIds: [],
             statusPollTimer: null,
+            rebuildPollTimer: null,
         };
 
         const appRoot = document.getElementById('appRoot');
@@ -790,7 +853,10 @@ $baseUrl = Helper::url('');
             });
 
             window.addEventListener('hashchange', handleRoute);
-            Promise.allSettled([checkServiceHealth(), loadDocuments()]).finally(() => handleRoute());
+            Promise.allSettled([checkServiceHealth(), loadDocuments(), loadRebuildStatus(true)]).finally(() => {
+                syncRebuildPolling();
+                handleRoute();
+            });
             setInterval(checkServiceHealth, 30000);
         }
 
@@ -960,7 +1026,10 @@ $baseUrl = Helper::url('');
 
         function showAlert(message, type = 'warning') {
             globalAlert.className = `kb-alert ${type} show`;
-            globalAlert.innerHTML = `<i class="fas ${type === 'error' ? 'fa-circle-xmark' : 'fa-circle-info'}"></i><span>${escapeHtml(message)}</span>`;
+            const icon = type === 'error'
+                ? 'fa-circle-xmark'
+                : (type === 'success' ? 'fa-circle-check' : 'fa-circle-info');
+            globalAlert.innerHTML = `<i class="fas ${icon}"></i><span>${escapeHtml(message)}</span>`;
         }
 
         function clearAlert() {
@@ -999,7 +1068,7 @@ $baseUrl = Helper::url('');
             try {
                 const query = new URLSearchParams();
                 if (state.docFilters.search) query.set('search', state.docFilters.search);
-                if (state.docFilters.audience) query.set('audience', state.docFilters.audience);
+                if (state.docFilters.ageBand) query.set('age_band', state.docFilters.ageBand);
                 if (state.docFilters.reviewStatus) query.set('review_status', state.docFilters.reviewStatus);
 
                 const path = query.toString()
@@ -1027,6 +1096,36 @@ $baseUrl = Helper::url('');
             return apiGet(`api/knowledge/files/${encodeURIComponent(docId)}/status`);
         }
 
+        async function loadRebuildStatus(silent = false) {
+            try {
+                const data = await apiGet('api/knowledge/rebuild/status');
+                const job = data.job || {};
+                state.rebuild = {
+                    status: job.status || 'idle',
+                    message: job.message || '未开始重建任务。',
+                    startedAt: job.started_at || null,
+                    finishedAt: job.finished_at || null,
+                    updatedAt: job.updated_at || null,
+                    pid: job.pid || null,
+                    isRunning: !!job.is_running,
+                    scanned: Number(job.scanned || 0),
+                    inserted: Number(job.inserted || 0),
+                    repaired: Number(job.repaired || 0),
+                    skipped: Number(job.skipped || 0),
+                    failed: Number(job.failed || 0),
+                    lastFile: job.last_file || null,
+                    logLines: Array.isArray(job.log_lines) ? job.log_lines : [],
+                };
+                syncRebuildPolling();
+                return state.rebuild;
+            } catch (error) {
+                if (!silent) {
+                    showAlert(error.message, 'error');
+                }
+                return state.rebuild;
+            }
+        }
+
         async function loadChunks(docId) {
             const query = new URLSearchParams();
             if (state.chunkFilters.search) query.set('search', state.chunkFilters.search);
@@ -1046,26 +1145,32 @@ $baseUrl = Helper::url('');
             clearAlert();
             const docs = getFilteredDocuments();
             const rows = docs.map(doc => renderDocRow(doc)).join('');
+            const rebuildJob = state.rebuild || {};
+            const rebuildRunning = !!rebuildJob.isRunning;
 
             appRoot.innerHTML = `
                 <section class="kb-card">
                     <div class="kb-section-head">
                         <div>
                             <h2>文档列表</h2>
-                            <div class="kb-muted">一个搜索框统一搜索文档标题、文件名和 chunk 关键词；列表只保留受众与审核状态两个筛选项。</div>
+                            <div class="kb-muted">一个搜索框统一搜索文档标题、文件名和 chunk 关键词；列表保留年龄段与审核状态两个筛选项。</div>
                         </div>
                         <div class="kb-actions">
                             <button class="kb-btn secondary" id="refreshDocsBtn"><i class="fas fa-rotate"></i> 刷新</button>
+                            <button class="kb-btn ghost" id="refreshRebuildStatusBtn"><i class="fas fa-list-check"></i> 刷新重建状态</button>
+                            <button class="kb-btn success" id="rebuildKnowledgeBtn" ${rebuildRunning ? 'disabled' : ''}><i class="fas fa-screwdriver-wrench"></i> 一键重建知识库</button>
                             <button class="kb-btn primary" id="goUploadBtn"><i class="fas fa-upload"></i> 上传新文档</button>
                         </div>
                     </div>
 
                     <div class="kb-filter-grid">
                         ${renderInputField('doc-search', '统一搜索', '搜索文档标题、文件名或 chunk 关键词', state.docFilters.search)}
-                        ${renderSelectField('doc-audience', 'Audience', ['', ...DOC_AUDIENCES], state.docFilters.audience)}
+                        ${renderSelectField('doc-age', 'Age Bands', ['', ...AGE_BANDS], state.docFilters.ageBand)}
                         ${renderSelectField('doc-review', 'Review Status', ['', ...REVIEW_STATUSES], state.docFilters.reviewStatus)}
                     </div>
                 </section>
+
+                ${renderRebuildJobCard()}
 
                 <section class="kb-card">
                     <div class="kb-section-head">
@@ -1099,8 +1204,56 @@ $baseUrl = Helper::url('');
                 await loadDocuments();
                 renderDocumentsView();
             });
+            document.getElementById('refreshRebuildStatusBtn').addEventListener('click', async () => {
+                await loadRebuildStatus();
+                renderDocumentsView();
+            });
+            document.getElementById('rebuildKnowledgeBtn').addEventListener('click', startKnowledgeRebuild);
             document.getElementById('goUploadBtn').addEventListener('click', () => navigate('upload'));
             bindDocRowActions();
+        }
+
+        function renderRebuildJobCard() {
+            const job = state.rebuild || {};
+            const status = job.status || 'idle';
+            const logOutput = (job.logLines || []).length
+                ? escapeHtml(job.logLines.join('\n'))
+                : '暂无日志输出。';
+
+            return `
+                <section class="kb-card kb-job-card">
+                    <div class="kb-section-head">
+                        <div>
+                            <h3>知识库重建任务</h3>
+                            <div class="kb-muted">用于新环境恢复 uploads 中已有文件的文档列表、chunk 元数据和向量索引。重建期间不要重复上传同批文件。</div>
+                        </div>
+                        <div class="kb-actions">
+                            ${renderRebuildStatusPill(status)}
+                            ${job.pid ? `<span class="kb-pill">PID ${escapeHtml(String(job.pid))}</span>` : ''}
+                        </div>
+                    </div>
+
+                    <div class="kb-note">
+                        ${escapeHtml(job.message || '未开始重建任务。')}
+                        ${job.lastFile ? `<div style="margin-top:8px;"><strong>最近处理：</strong>${escapeHtml(job.lastFile)}</div>` : ''}
+                        <div style="margin-top:8px;">
+                            开始时间：${escapeHtml(formatDate(job.startedAt))}
+                            · 完成时间：${escapeHtml(formatDate(job.finishedAt))}
+                            · 最后更新：${escapeHtml(formatDate(job.updatedAt))}
+                        </div>
+                    </div>
+
+                    <div class="kb-job-grid">
+                        <div class="kb-job-metric"><span class="kb-muted">扫描文件</span><strong>${escapeHtml(String(job.scanned || 0))}</strong></div>
+                        <div class="kb-job-metric"><span class="kb-muted">新插入</span><strong>${escapeHtml(String(job.inserted || 0))}</strong></div>
+                        <div class="kb-job-metric"><span class="kb-muted">已修复</span><strong>${escapeHtml(String(job.repaired || 0))}</strong></div>
+                        <div class="kb-job-metric"><span class="kb-muted">已跳过</span><strong>${escapeHtml(String(job.skipped || 0))}</strong></div>
+                        <div class="kb-job-metric"><span class="kb-muted">失败数</span><strong>${escapeHtml(String(job.failed || 0))}</strong></div>
+                    </div>
+
+                    <div class="kb-log-box">${logOutput}</div>
+                </section>
+            `;
         }
 
         function renderDocRow(doc) {
@@ -1153,7 +1306,7 @@ $baseUrl = Helper::url('');
         function bindDocumentFilters() {
             const map = [
                 ['doc-search', 'search'],
-                ['doc-audience', 'audience'],
+                ['doc-age', 'ageBand'],
                 ['doc-review', 'reviewStatus'],
             ];
 
@@ -1386,9 +1539,15 @@ $baseUrl = Helper::url('');
                 }
 
                 if (successCount) {
-                    showAlert(hasError ? '批量上传已完成，部分文件失败，请检查队列状态。' : '批量上传完成，可在队列中进入各文件的分析流程。', hasError ? 'warning' : 'warning');
+                    if (hasError) {
+                        const firstError = state.upload.items.find(item => item.status === 'error' && item.error)?.error || '';
+                        showAlert(firstError ? `批量上传已完成，但部分文件失败：${firstError}` : '批量上传已完成，部分文件失败，请检查队列状态。', 'warning');
+                    } else {
+                        showAlert('批量上传完成，可在队列中进入各文件的分析流程。', 'warning');
+                    }
                 } else {
-                    showAlert('上传失败，请检查队列状态。', 'error');
+                    const firstError = state.upload.items.find(item => item.status === 'error' && item.error)?.error || '';
+                    showAlert(firstError ? `上传失败：${firstError}` : '上传失败，请检查队列状态。', 'error');
                 }
             } catch (error) {
                 state.upload.submitting = false;
@@ -2024,6 +2183,18 @@ $baseUrl = Helper::url('');
             return values.map(value => renderPill(value)).join('');
         }
 
+        function renderRebuildStatusPill(status) {
+            const map = {
+                idle: {label: 'idle', className: ''},
+                queued: {label: 'queued', className: 'status-pending'},
+                running: {label: 'running', className: 'status-pending'},
+                completed: {label: 'completed', className: 'status-completed'},
+                failed: {label: 'failed', className: 'status-failed'},
+            };
+            const current = map[status] || {label: String(status || 'unknown'), className: ''};
+            return `<span class="kb-pill ${current.className}">${escapeHtml(current.label)}</span>`;
+        }
+
         function renderInputField(id, label, placeholder, value) {
             return `
                 <div class="kb-field">
@@ -2223,6 +2394,15 @@ $baseUrl = Helper::url('');
                         return;
                     }
 
+                    if (xhr.status === 401) {
+                        reject(new Error('登录状态已失效，请刷新页面后重新登录。'));
+                        return;
+                    }
+                    if (xhr.status === 403) {
+                        reject(new Error('上传请求被拒绝（可能是 CSRF token 失效）。请刷新页面后重试。'));
+                        return;
+                    }
+
                     reject(new Error(data.error || data.detail || '上传失败'));
                 };
 
@@ -2258,6 +2438,27 @@ $baseUrl = Helper::url('');
             const date = new Date(value);
             if (Number.isNaN(date.getTime())) return String(value);
             return date.toLocaleString();
+        }
+
+        async function startKnowledgeRebuild() {
+            if (state.rebuild?.isRunning) {
+                showAlert('已有重建任务在运行中。', 'warning');
+                return;
+            }
+
+            if (!confirm('确认启动知识库重建？系统会扫描 storage/knowledge/uploads，补回缺失文档和 chunk，并重建向量索引。重建期间建议不要上传同批文件。')) {
+                return;
+            }
+
+            try {
+                await apiPost('api/knowledge/rebuild', {});
+                await loadRebuildStatus();
+                syncRebuildPolling();
+                renderDocumentsView();
+                showAlert('知识库重建任务已启动。', 'success');
+            } catch (error) {
+                showAlert(error.message, 'error');
+            }
         }
 
         function stageLabelByKey(key) {
@@ -2297,6 +2498,40 @@ $baseUrl = Helper::url('');
                 clearTimeout(state.statusPollTimer);
                 state.statusPollTimer = null;
             }
+        }
+
+        function clearRebuildPolling() {
+            if (state.rebuildPollTimer) {
+                clearTimeout(state.rebuildPollTimer);
+                state.rebuildPollTimer = null;
+            }
+        }
+
+        function syncRebuildPolling() {
+            clearRebuildPolling();
+            if (!state.rebuild?.isRunning) {
+                return;
+            }
+
+            state.rebuildPollTimer = setTimeout(async () => {
+                await loadRebuildStatus(true);
+                if (state.view === 'documents') {
+                    renderDocumentsView();
+                }
+                if (!state.rebuild?.isRunning) {
+                    await loadDocuments();
+                    if (state.view === 'documents') {
+                        renderDocumentsView();
+                    }
+                    if (state.rebuild?.status === 'completed') {
+                        showAlert('知识库重建完成，文档列表已刷新。', 'success');
+                    } else if (state.rebuild?.status === 'failed') {
+                        showAlert('知识库重建失败，请查看日志。', 'error');
+                    }
+                    return;
+                }
+                syncRebuildPolling();
+            }, 2500);
         }
     </script>
 </body>

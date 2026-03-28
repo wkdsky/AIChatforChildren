@@ -51,6 +51,37 @@ cd /var/www/html/AIChatforChildren/services/chroma
 
 The service will start on `http://127.0.0.1:4001`
 
+## Rebuilding Metadata After Migration
+
+If `storage/knowledge/uploads/` was copied to a new environment but the MySQL
+tables `kb_documents` / `kb_chunks` are empty or incomplete, run:
+
+```bash
+cd /path/to/AIChatforChildren/services/chroma
+python3 rebuild_kb.py
+```
+
+Useful flags:
+
+```bash
+python3 rebuild_kb.py --dry-run
+python3 rebuild_kb.py --force
+```
+
+What it does:
+
+- scans `storage/knowledge/uploads/`
+- restores missing `kb_documents`
+- rebuilds `kb_chunks`
+- upserts vectors back into Chroma
+
+Notes:
+
+- it reuses the current parser/chunking/classification pipeline, so recovered
+  metadata is rebuilt from file contents
+- if the original MySQL rows are gone, the exact old title/original filename
+  may be unrecoverable; the script will infer a title from the document text
+
 ## API Endpoints
 
 | Method | Endpoint | Description |
