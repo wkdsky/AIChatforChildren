@@ -104,6 +104,8 @@ class KnowledgeController
             '/api/files/{file_id}/chunks/{chunk_id}' => ['get'],
             '/api/files/{file_id}/chunks/bulk' => ['put'],
             '/api/files/{file_id}/actions/{action}' => ['post'],
+            '/api/rebuild/status' => ['get'],
+            '/api/rebuild' => ['post'],
             '/api/search' => ['get'],
             '/api/context' => ['get'],
         ];
@@ -187,11 +189,11 @@ class KnowledgeController
     private function writeJsonFile(string $path, array $payload): void
     {
         $directory = dirname($path);
-        if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
+        if (!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory)) {
             throw new \RuntimeException('Failed to create directory: ' . $directory);
         }
 
-        $result = file_put_contents(
+        $result = @file_put_contents(
             $path,
             json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
         );
@@ -429,10 +431,14 @@ class KnowledgeController
                 $payload['status'] = 'failed';
                 $payload['message'] = '重建进程已退出，请检查日志。';
                 $payload['finished_at'] = date('c');
-                try {
-                    $this->writeJsonFile($paths['status'], $payload);
-                } catch (\Throwable $e) {
-                    $payload['warnings'][] = 'Unable to persist rebuild status: ' . $e->getMessage();
+                if ($this->canWritePath($paths['status'])) {
+                    try {
+                        $this->writeJsonFile($paths['status'], $payload);
+                    } catch (\Throwable $e) {
+                        $payload['warnings'][] = 'Unable to persist rebuild status: ' . $e->getMessage();
+                    }
+                } else {
+                    $payload['warnings'][] = 'Status path is not writable: ' . dirname($paths['status']);
                 }
             }
         }
@@ -899,10 +905,13 @@ class KnowledgeController
 
     public function rebuildStatus(): void
     {
-        $this->jsonResponse([
-            'success' => true,
-            'job' => $this->getKnowledgeRebuildStatusPayload(),
-        ], 200);
+        $result = $this->proxyRequest('/api/rebuild/status');
+
+        if (!$result['success']) {
+            $this->jsonResponse(['success' => false, 'error' => $result['error']], $result['code']);
+        }
+
+        $this->jsonResponse($result['data'], $result['code']);
     }
 
     public function rebuildKnowledgeBase(): void
@@ -912,123 +921,13 @@ class KnowledgeController
         }
 
         $this->verifyCsrf();
+        $result = $this->proxyRequest('/api/rebuild', 'POST', []);
 
-        if (!function_exists('exec')) {
-            $this->jsonResponse([
-                'success' => false,
-                'error' => 'PHP exec() is disabled. Cannot start rebuild task from the admin page.',
-            ], 500);
+        if (!$result['success']) {
+            $this->jsonResponse(['success' => false, 'error' => $result['error']], $result['code']);
         }
 
-        $paths = $this->getKnowledgeRebuildPaths();
-        if (!is_file($paths['script'])) {
-            $this->jsonResponse([
-                'success' => false,
-                'error' => 'Rebuild script not found: ' . $paths['script'],
-            ], 500);
-        }
-
-        $currentJob = $this->getKnowledgeRebuildStatusPayload();
-        if (!empty($currentJob['is_running'])) {
-            $this->jsonResponse([
-                'success' => false,
-                'error' => 'A rebuild task is already running.',
-                'job' => $currentJob,
-            ], 409);
-        }
-
-        $pythonRuntime = $this->resolvePythonRuntime();
-        if (empty($pythonRuntime['ok']) || empty($pythonRuntime['command'])) {
-            $this->jsonResponse([
-                'success' => false,
-                'error' => $pythonRuntime['error'] ?? 'No compatible Python runtime found.',
-                'warnings' => $pythonRuntime['warnings'] ?? [],
-            ], 500);
-        }
-        $pythonPath = (string) $pythonRuntime['command'];
-
-        $startedAt = date('c');
-        $queuedStatus = [
-            'status' => 'queued',
-            'message' => '重建任务已排队，等待启动。',
-            'started_at' => $startedAt,
-            'finished_at' => null,
-            'updated_at' => $startedAt,
-            'pid' => null,
-            'scanned' => 0,
-            'inserted' => 0,
-            'repaired' => 0,
-            'skipped' => 0,
-            'failed' => 0,
-            'last_file' => null,
-            'warnings' => $pythonRuntime['warnings'] ?? [],
-        ];
-
-        try {
-            if (!$this->canWritePath($paths['status'])) {
-                throw new \RuntimeException('Path is not writable: ' . dirname($paths['status']));
-            }
-            if (!$this->canWritePath($paths['log'])) {
-                throw new \RuntimeException('Path is not writable: ' . dirname($paths['log']));
-            }
-            $this->writeJsonFile($paths['status'], $queuedStatus);
-            $logWrite = file_put_contents($paths['log'], '');
-            if ($logWrite === false) {
-                throw new \RuntimeException('Failed to write log file: ' . $paths['log']);
-            }
-        } catch (\Throwable $e) {
-            $this->jsonResponse([
-                'success' => false,
-                'error' => 'Unable to prepare rebuild status/log files. ' . $e->getMessage(),
-            ], 500);
-        }
-
-        $command = sprintf(
-            'cd %s && %s %s --status-file %s >> %s 2>&1 < /dev/null & echo $!',
-            escapeshellarg($paths['service_dir']),
-            escapeshellarg($pythonPath),
-            escapeshellarg($paths['script']),
-            escapeshellarg($paths['status']),
-            escapeshellarg($paths['log'])
-        );
-
-        $output = [];
-        $exitCode = 1;
-        @exec($command, $output, $exitCode);
-
-        $pid = isset($output[0]) ? (int) trim((string) $output[0]) : 0;
-        if ($exitCode !== 0 || $pid <= 0) {
-            $queuedStatus['status'] = 'failed';
-            $queuedStatus['message'] = '无法启动重建进程，请检查 PHP exec 权限和 Python 运行环境。';
-            $queuedStatus['finished_at'] = date('c');
-            $this->writeJsonFile($paths['status'], $queuedStatus);
-
-            $this->jsonResponse([
-                'success' => false,
-                'error' => $queuedStatus['message'],
-                'job' => $queuedStatus,
-            ], 500);
-        }
-
-        $queuedStatus['pid'] = $pid;
-        $queuedStatus['status'] = 'running';
-        $queuedStatus['message'] = '知识库重建任务已启动。';
-        $queuedStatus['updated_at'] = date('c');
-
-        try {
-            $this->writeJsonFile($paths['status'], $queuedStatus);
-        } catch (\Throwable $e) {
-            $this->jsonResponse([
-                'success' => false,
-                'error' => 'Rebuild process started, but failed to persist status. ' . $e->getMessage(),
-            ], 500);
-        }
-
-        $this->jsonResponse([
-            'success' => true,
-            'message' => '知识库重建任务已启动。',
-            'job' => $queuedStatus,
-        ], 202);
+        $this->jsonResponse($result['data'], $result['code']);
     }
 
     /**

@@ -3,6 +3,9 @@ ChromaDB Knowledge Base Service
 Refactored document/chunk indexing service with automatic metadata generation.
 """
 import os
+import json
+import subprocess
+import sys
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -80,6 +83,8 @@ collection = chroma_client.get_or_create_collection(
 )
 
 _repository: Optional[KnowledgeRepository] = None
+REBUILD_STATUS_FILE = os.path.join(config.STORAGE_DIR, "rebuild_status.json")
+REBUILD_LOG_FILE = os.path.join(config.STORAGE_DIR, "rebuild.log")
 
 
 def get_repository() -> KnowledgeRepository:
@@ -87,6 +92,137 @@ def get_repository() -> KnowledgeRepository:
     if _repository is None:
         _repository = KnowledgeRepository()
     return _repository
+
+
+def read_json_file(path: str) -> Dict[str, Any]:
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+            return payload if isinstance(payload, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def write_json_file(path: str, payload: Dict[str, Any]) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+
+def read_log_tail(path: str, max_lines: int = 40) -> List[str]:
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            lines = [line.strip() for line in handle.readlines() if line.strip()]
+    except OSError:
+        return []
+    return lines[-max_lines:]
+
+
+def is_pid_running(pid: Optional[int]) -> bool:
+    if not pid or pid <= 0:
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except OSError:
+        return False
+    return True
+
+
+def get_rebuild_status_payload() -> Dict[str, Any]:
+    payload = {
+        "status": "idle",
+        "message": "未开始重建任务。",
+        "started_at": None,
+        "finished_at": None,
+        "updated_at": None,
+        "pid": None,
+        "scanned": 0,
+        "inserted": 0,
+        "repaired": 0,
+        "skipped": 0,
+        "failed": 0,
+        "last_file": None,
+        "warnings": [],
+        "log_lines": read_log_tail(REBUILD_LOG_FILE),
+    }
+
+    stored = read_json_file(REBUILD_STATUS_FILE)
+    if stored:
+        payload.update(stored)
+        payload["log_lines"] = read_log_tail(REBUILD_LOG_FILE)
+
+    pid = int(payload.get("pid") or 0) or None
+    is_running = is_pid_running(pid)
+    payload["is_running"] = is_running
+
+    if payload.get("status") in {"queued", "running"} and not is_running and not payload.get("finished_at"):
+        payload["status"] = "failed"
+        payload["message"] = "重建进程已退出，请检查日志。"
+        payload["finished_at"] = now_iso()
+        try:
+            write_json_file(REBUILD_STATUS_FILE, payload)
+        except OSError as exc:
+            warnings = list(payload.get("warnings") or [])
+            warnings.append("Unable to persist rebuild status: {0}".format(exc))
+            payload["warnings"] = warnings
+
+    return payload
+
+
+def start_rebuild_process() -> Dict[str, Any]:
+    current = get_rebuild_status_payload()
+    if current.get("is_running"):
+        raise HTTPException(status_code=409, detail="A rebuild task is already running.")
+
+    queued_status = {
+        "status": "queued",
+        "message": "重建任务已排队，等待启动。",
+        "started_at": now_iso(),
+        "finished_at": None,
+        "updated_at": now_iso(),
+        "pid": None,
+        "scanned": 0,
+        "inserted": 0,
+        "repaired": 0,
+        "skipped": 0,
+        "failed": 0,
+        "last_file": None,
+        "warnings": [],
+    }
+
+    try:
+        write_json_file(REBUILD_STATUS_FILE, queued_status)
+        os.makedirs(os.path.dirname(REBUILD_LOG_FILE), exist_ok=True)
+        with open(REBUILD_LOG_FILE, "w", encoding="utf-8") as log_handle:
+            process = subprocess.Popen(
+                [sys.executable, os.path.join(os.path.dirname(__file__), "rebuild_kb.py"), "--status-file", REBUILD_STATUS_FILE],
+                cwd=os.path.dirname(__file__),
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+    except Exception as exc:
+        queued_status["status"] = "failed"
+        queued_status["message"] = "无法启动重建进程。"
+        queued_status["finished_at"] = now_iso()
+        queued_status["warnings"] = [str(exc)]
+        try:
+            write_json_file(REBUILD_STATUS_FILE, queued_status)
+        except OSError:
+            pass
+        raise HTTPException(status_code=500, detail="Unable to start rebuild process: {0}".format(exc)) from exc
+
+    queued_status["pid"] = process.pid
+    queued_status["status"] = "running"
+    queued_status["message"] = "知识库重建任务已启动。"
+    queued_status["updated_at"] = now_iso()
+    write_json_file(REBUILD_STATUS_FILE, queued_status)
+    return queued_status
 
 
 class FileInfo(BaseModel):
@@ -1210,6 +1346,23 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat(), "version": "2.1.0"}
+
+
+@app.get("/api/rebuild/status")
+async def rebuild_status():
+    return {
+        "success": True,
+        "job": get_rebuild_status_payload(),
+    }
+
+
+@app.post("/api/rebuild")
+async def rebuild_knowledge_base():
+    return {
+        "success": True,
+        "message": "知识库重建任务已启动。",
+        "job": start_rebuild_process(),
+    }
 
 
 @app.post("/api/upload", response_model=UploadResponse)
