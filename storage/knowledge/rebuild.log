@@ -1,0 +1,7 @@
+Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
+Failed to send telemetry event ClientCreateCollectionEvent: capture() takes 1 positional argument but 3 were given
+Scanning 3 upload file(s) in /home/wkd/AIChatforChildren/storage/knowledge/uploads
+[skip] 4d738fb1-2e8a-48ee-9823-779e4b97de55 (UNICEF-Innocenti-Guidance-on-AI-and-Children-3-2025)
+[skip] 685c5b6d-d83c-4514-9a66-e1e9d1423863 (upload_probe)
+[skip] e02939b3-bbf6-4923-8c84-581b60d4f1af (UNICEF-Global-Insight-policy-guidance-AI-children-2.0-2021)
+Finished. inserted=0 repaired=0 skipped=3 failed=0

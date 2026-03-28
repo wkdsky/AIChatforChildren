@@ -950,7 +950,14 @@ $baseUrl = Helper::url('');
             const response = await fetch(BASE_URL + path, {
                 credentials: 'same-origin'
             });
-            const data = await response.json();
+            const rawText = await response.text();
+            let data = {};
+            try {
+                data = rawText ? JSON.parse(rawText) : {};
+            } catch (error) {
+                const compactBody = rawText.replace(/\s+/g, ' ').trim();
+                throw new Error(`接口返回了非 JSON 响应（HTTP ${response.status || 0}）：${compactBody.slice(0, 220) || 'empty response'}`);
+            }
             if (!response.ok) {
                 throw new Error(data.error || data.detail || 'Request failed');
             }
@@ -970,7 +977,17 @@ $baseUrl = Helper::url('');
                     csrf_token: CSRF_TOKEN
                 })
             });
-            const data = await response.json();
+            const rawText = await response.text();
+            let data = {};
+            try {
+                data = rawText ? JSON.parse(rawText) : {};
+            } catch (error) {
+                const compactBody = rawText.replace(/\s+/g, ' ').trim();
+                if (/sign-?in|Authentication required|Session expired/i.test(compactBody)) {
+                    throw new Error('登录状态已失效，请刷新页面后重新登录。');
+                }
+                throw new Error(`接口返回了非 JSON 响应（HTTP ${response.status || 0}）：${compactBody.slice(0, 220) || 'empty response'}`);
+            }
             if (!response.ok) {
                 throw new Error(data.error || data.detail || 'Request failed');
             }
@@ -983,7 +1000,14 @@ $baseUrl = Helper::url('');
                 credentials: 'same-origin',
                 body: formData
             });
-            const data = await response.json();
+            const rawText = await response.text();
+            let data = {};
+            try {
+                data = rawText ? JSON.parse(rawText) : {};
+            } catch (error) {
+                const compactBody = rawText.replace(/\s+/g, ' ').trim();
+                throw new Error(`接口返回了非 JSON 响应（HTTP ${response.status || 0}）：${compactBody.slice(0, 220) || 'empty response'}`);
+            }
             if (!response.ok) {
                 throw new Error(data.error || data.detail || 'Request failed');
             }

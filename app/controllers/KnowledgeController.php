@@ -187,14 +187,17 @@ class KnowledgeController
     private function writeJsonFile(string $path, array $payload): void
     {
         $directory = dirname($path);
-        if (!is_dir($directory)) {
-            mkdir($directory, 0775, true);
+        if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
+            throw new \RuntimeException('Failed to create directory: ' . $directory);
         }
 
-        file_put_contents(
+        $result = file_put_contents(
             $path,
             json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
         );
+        if ($result === false) {
+            throw new \RuntimeException('Failed to write file: ' . $path);
+        }
     }
 
     private function isProcessRunning(?int $pid): bool
@@ -791,8 +794,18 @@ class KnowledgeController
             'last_file' => null,
         ];
 
-        $this->writeJsonFile($paths['status'], $queuedStatus);
-        file_put_contents($paths['log'], '');
+        try {
+            $this->writeJsonFile($paths['status'], $queuedStatus);
+            $logWrite = file_put_contents($paths['log'], '');
+            if ($logWrite === false) {
+                throw new \RuntimeException('Failed to write log file: ' . $paths['log']);
+            }
+        } catch (\Throwable $e) {
+            $this->jsonResponse([
+                'success' => false,
+                'error' => 'Unable to prepare rebuild status/log files. ' . $e->getMessage(),
+            ], 500);
+        }
 
         $command = sprintf(
             'cd %s && nohup %s %s --status-file %s > %s 2>&1 & echo $!',
@@ -825,7 +838,15 @@ class KnowledgeController
         $queuedStatus['status'] = 'running';
         $queuedStatus['message'] = '知识库重建任务已启动。';
         $queuedStatus['updated_at'] = date('c');
-        $this->writeJsonFile($paths['status'], $queuedStatus);
+
+        try {
+            $this->writeJsonFile($paths['status'], $queuedStatus);
+        } catch (\Throwable $e) {
+            $this->jsonResponse([
+                'success' => false,
+                'error' => 'Rebuild process started, but failed to persist status. ' . $e->getMessage(),
+            ], 500);
+        }
 
         $this->jsonResponse([
             'success' => true,

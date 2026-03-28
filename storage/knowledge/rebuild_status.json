@@ -1,0 +1,14 @@
+{
+    "status": "running",
+    "message": "知识库重建任务已启动。",
+    "started_at": "2026-03-28T08:30:34+00:00",
+    "finished_at": null,
+    "updated_at": "2026-03-28T08:30:38+00:00",
+    "pid": 4,
+    "scanned": 0,
+    "inserted": 0,
+    "repaired": 0,
+    "skipped": 0,
+    "failed": 0,
+    "last_file": null
+}
