@@ -788,6 +788,14 @@ $baseUrl = Helper::url('');
             serviceApiCompatible: false,
             serviceVersion: '',
             serviceMissingEndpoints: [],
+            serviceDbHealthy: false,
+            serviceDbError: '',
+            serviceDbMode: '',
+            serviceDbSocket: '',
+            serviceDbTables: {
+                kb_documents: false,
+                kb_chunks: false,
+            },
             maxFileSizeFormatted: '20MB',
             maxFileSize: 20 * 1024 * 1024,
             rebuild: {
@@ -1021,6 +1029,14 @@ $baseUrl = Helper::url('');
                 state.serviceApiCompatible = !!data.api_compatible;
                 state.serviceVersion = data.service_version || '';
                 state.serviceMissingEndpoints = Array.isArray(data.missing_endpoints) ? data.missing_endpoints : [];
+                state.serviceDbHealthy = !!(data.database && data.database.ok);
+                state.serviceDbError = data.database?.error || '';
+                state.serviceDbMode = data.database?.mode || '';
+                state.serviceDbSocket = data.database?.resolved_socket || data.database?.socket || '';
+                state.serviceDbTables = data.database?.tables || {
+                    kb_documents: false,
+                    kb_chunks: false,
+                };
                 state.maxFileSize = data.config?.max_file_size || state.maxFileSize;
                 state.maxFileSizeFormatted = data.config?.max_file_size_formatted || state.maxFileSizeFormatted;
                 updateServiceStatus();
@@ -1029,6 +1045,14 @@ $baseUrl = Helper::url('');
                 state.serviceApiCompatible = false;
                 state.serviceVersion = '';
                 state.serviceMissingEndpoints = [];
+                state.serviceDbHealthy = false;
+                state.serviceDbError = '';
+                state.serviceDbMode = '';
+                state.serviceDbSocket = '';
+                state.serviceDbTables = {
+                    kb_documents: false,
+                    kb_chunks: false,
+                };
                 updateServiceStatus();
             }
         }
@@ -1068,6 +1092,17 @@ $baseUrl = Helper::url('');
                 showAlert(
                     `当前运行中的知识库服务仍是旧接口版本，管理员知识库页需要的新接口尚未全部生效。请重启/部署 services/chroma 当前代码。${missing ? ` 缺失示例：${missing}` : ''}`,
                     'warning'
+                );
+                return;
+            }
+
+            if (state.serviceOnline && !state.serviceDbHealthy) {
+                const tableHint = `kb_documents=${state.serviceDbTables?.kb_documents ? 'yes' : 'no'}, kb_chunks=${state.serviceDbTables?.kb_chunks ? 'yes' : 'no'}`;
+                const modeHint = state.serviceDbMode ? ` 连接方式：${state.serviceDbMode}` : '';
+                const socketHint = state.serviceDbSocket ? ` socket：${state.serviceDbSocket}` : '';
+                showAlert(
+                    `知识库服务已启动，但 MySQL 自检失败。${state.serviceDbError || '请检查 DB_HOST/DB_PORT/DB_USERNAME/DB_PASS/DB_SOCKET。'}${modeHint}${socketHint}；表状态：${tableHint}`,
+                    'error'
                 );
             }
         }

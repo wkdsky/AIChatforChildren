@@ -52,6 +52,7 @@ DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_NAME = os.getenv("DB_NAME", "")
 DB_USERNAME = os.getenv("DB_USERNAME", "")
 DB_PASS = os.getenv("DB_PASS", "")
+DB_SOCKET = os.getenv("DB_SOCKET", "").strip()
 
 # Retrieval defaults
 DEFAULT_CHILD_AGE_BAND = os.getenv("KB_DEFAULT_CHILD_AGE_BAND", "6_12")

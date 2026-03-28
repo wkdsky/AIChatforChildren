@@ -862,6 +862,16 @@ class KnowledgeController
         $isRunning = $this->isServiceRunning();
         $maxSize = $this->getMaxUploadSize();
         $serviceVersion = null;
+        $databaseHealth = [
+            'ok' => false,
+            'error' => null,
+            'tables' => [
+                'kb_documents' => false,
+                'kb_chunks' => false,
+            ],
+            'mode' => null,
+            'resolved_socket' => null,
+        ];
         $compatibility = [
             'compatible' => false,
             'missing' => [],
@@ -872,6 +882,9 @@ class KnowledgeController
             $healthResult = $this->proxyRequest('/api/health');
             if ($healthResult['success'] && $healthResult['code'] === 200 && is_array($healthResult['data'])) {
                 $serviceVersion = $healthResult['data']['version'] ?? null;
+                if (isset($healthResult['data']['database']) && is_array($healthResult['data']['database'])) {
+                    $databaseHealth = array_merge($databaseHealth, $healthResult['data']['database']);
+                }
             }
             $compatibility = $this->inspectServiceApi();
         }
@@ -889,6 +902,7 @@ class KnowledgeController
                 : ($compatibility['compatible']
                     ? 'Knowledge base service is running'
                     : 'Knowledge base service is running but uses an older API surface'),
+            'database' => $databaseHealth,
             'config' => [
                 'max_file_size' => $maxSize,
                 'max_file_size_formatted' => $this->formatSize($maxSize),

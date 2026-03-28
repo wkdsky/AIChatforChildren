@@ -94,6 +94,28 @@ def get_repository() -> KnowledgeRepository:
     return _repository
 
 
+def get_database_health() -> Dict[str, Any]:
+    try:
+        repository = get_repository()
+        return repository.diagnose_connection()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "host": config.DB_HOST,
+            "port": config.DB_PORT,
+            "database": config.DB_NAME,
+            "username": config.DB_USERNAME,
+            "socket": config.DB_SOCKET or None,
+            "mode": None,
+            "resolved_socket": None,
+            "tables": {
+                "kb_documents": False,
+                "kb_chunks": False,
+            },
+            "error": str(exc),
+        }
+
+
 def read_json_file(path: str) -> Dict[str, Any]:
     if not os.path.isfile(path):
         return {}
@@ -1345,7 +1367,12 @@ async def root():
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "version": "2.1.0"}
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "version": "2.1.0",
+        "database": get_database_health(),
+    }
 
 
 @app.get("/api/rebuild/status")
