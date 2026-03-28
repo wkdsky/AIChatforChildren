@@ -310,6 +310,7 @@ class KnowledgeController
             'failed' => 0,
             'last_file' => null,
             'log_lines' => $this->readLogTail($paths['log']),
+            'warnings' => [],
         ];
 
         if (!empty($status)) {
@@ -325,7 +326,11 @@ class KnowledgeController
                 $payload['status'] = 'failed';
                 $payload['message'] = '重建进程已退出，请检查日志。';
                 $payload['finished_at'] = date('c');
-                $this->writeJsonFile($paths['status'], $payload);
+                try {
+                    $this->writeJsonFile($paths['status'], $payload);
+                } catch (\Throwable $e) {
+                    $payload['warnings'][] = 'Unable to persist rebuild status: ' . $e->getMessage();
+                }
             }
         }
 
