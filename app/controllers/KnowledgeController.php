@@ -241,6 +241,56 @@ class KnowledgeController
         return array_values(array_filter(array_map('trim', $tail), static fn ($line) => $line !== ''));
     }
 
+    private function canWritePath(string $path): bool
+    {
+        if (file_exists($path)) {
+            return is_writable($path);
+        }
+
+        $parent = dirname($path);
+        while ($parent !== '' && $parent !== DIRECTORY_SEPARATOR && !file_exists($parent)) {
+            $parent = dirname($parent);
+        }
+
+        return $parent !== '' && is_writable($parent);
+    }
+
+    private function commandExists(string $command): bool
+    {
+        if (!function_exists('exec')) {
+            return false;
+        }
+
+        $output = [];
+        $exitCode = 1;
+        @exec('command -v ' . escapeshellarg($command) . ' 2>/dev/null', $output, $exitCode);
+        return $exitCode === 0 && !empty($output);
+    }
+
+    private function validatePythonPath(string $pythonPath): ?string
+    {
+        $trimmed = trim($pythonPath);
+        if ($trimmed === '') {
+            return 'CHROMA_PYTHON_PATH is empty.';
+        }
+
+        if (str_contains($trimmed, DIRECTORY_SEPARATOR)) {
+            if (!file_exists($trimmed)) {
+                return 'Configured Python path does not exist: ' . $trimmed;
+            }
+            if (!is_executable($trimmed)) {
+                return 'Configured Python path is not executable: ' . $trimmed;
+            }
+            return null;
+        }
+
+        if (!$this->commandExists($trimmed)) {
+            return 'Python command not found in PATH: ' . $trimmed;
+        }
+
+        return null;
+    }
+
     private function getKnowledgeRebuildStatusPayload(): array
     {
         $paths = $this->getKnowledgeRebuildPaths();
@@ -778,6 +828,14 @@ class KnowledgeController
             $pythonPath = 'python3';
         }
 
+        $pythonError = $this->validatePythonPath($pythonPath);
+        if ($pythonError !== null) {
+            $this->jsonResponse([
+                'success' => false,
+                'error' => $pythonError,
+            ], 500);
+        }
+
         $startedAt = date('c');
         $queuedStatus = [
             'status' => 'queued',
@@ -795,6 +853,12 @@ class KnowledgeController
         ];
 
         try {
+            if (!$this->canWritePath($paths['status'])) {
+                throw new \RuntimeException('Path is not writable: ' . dirname($paths['status']));
+            }
+            if (!$this->canWritePath($paths['log'])) {
+                throw new \RuntimeException('Path is not writable: ' . dirname($paths['log']));
+            }
             $this->writeJsonFile($paths['status'], $queuedStatus);
             $logWrite = file_put_contents($paths['log'], '');
             if ($logWrite === false) {
@@ -808,7 +872,7 @@ class KnowledgeController
         }
 
         $command = sprintf(
-            'cd %s && nohup %s %s --status-file %s > %s 2>&1 & echo $!',
+            'cd %s && %s %s --status-file %s >> %s 2>&1 < /dev/null & echo $!',
             escapeshellarg($paths['service_dir']),
             escapeshellarg($pythonPath),
             escapeshellarg($paths['script']),
