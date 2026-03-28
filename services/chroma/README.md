@@ -76,7 +76,7 @@ The service will start on `http://127.0.0.1:4001`
 Edit `config.py` to change:
 
 - `PORT`: Service port (default: 4001)
-- `MAX_FILE_SIZE`: Maximum upload size (default: 50MB)
+- `MAX_FILE_SIZE`: Maximum upload size (default: 20MB)
 - `MAX_FILENAME_LENGTH`: Maximum filename length (default: 100 chars)
 - `CHUNK_SIZE`: Text chunk size for vectorization (default: 500 chars)
 - `CHUNK_OVERLAP`: Overlap between chunks (default: 50 chars)

@@ -66,6 +66,20 @@ LLM_API_URL="https://api.deepseek.com/v1/chat/completions"
 
 **Note**: The current configuration uses DeepSeek API. You can replace these values with any OpenAI-compatible API endpoint (e.g., OpenAI, Azure OpenAI, or other LLM providers).
 
+### Step 2.1: Knowledge Base Storage Location
+
+The knowledge base service stores data locally under the project root in the following directories:
+
+- `storage/knowledge/uploads/`: Stores the original uploaded files
+- `storage/knowledge/chroma_db/`: Stores ChromaDB persistent data, including vector indexes and metadata
+
+If the project is deployed at `/var/www/html/AIChatforChildren`, the corresponding absolute paths are:
+
+- `/var/www/html/AIChatforChildren/storage/knowledge/uploads/`
+- `/var/www/html/AIChatforChildren/storage/knowledge/chroma_db/`
+
+These directories are created automatically when the ChromaDB service starts.
+
 ### Step 3: Run Database Migrations
 
 Execute the database migrations to create all necessary tables:
@@ -452,5 +466,39 @@ starter/
 └── composer.json        # Composer configuration
 ```
 
+run chromaDB：
+cd /home/wkd/AIChatforChildren/services/chroma
+/home/wkd/miniconda3/envs/py39/bin/python main.py
+
+visit router:
+http://localhost:81/AIChatforChildren/sign-in
 
 
+UNICEF《Guidance on AI and Children 3.0》
+这份最适合放在你的“产品规则库/安全边界库”里，用来定义儿童友好 AI 的原则，比如安全、监督、隐私、透明、年龄适配、风险评估等。UNICEF 页面还提供了 完整版 PDF、checklist 和 poster 下载。
+UNICEF《Policy Guidance on AI for Children 2.0》
+这是前一版的系统性框架，适合和 3.0 配套使用。3.0 更新，2.0 更像“基础理论版”，做知识库时可以把两者结合，前者做规则，后者做解释。
+NSPCC《Viewing Generative AI and children’s safety in the round》
+这份很适合放入“风险场景库”。它聚焦生成式 AI 对儿童的具体风险，并总结了 27 类解决思路，还强调儿童安全要进入产品设计和治理流程。对你做“高风险话题拦截、异常依赖预警、求助转介规则”很有参考价值。
+Common Sense Media《Talk, Trust, and Trade-Offs》
+这份和“AI 伙伴/AI 陪伴”最贴近，直接讨论青少年使用 AI companions 的情况，并建议家庭协议、风险沟通，以及明确 AI 不能替代心理健康支持。做儿童陪伴产品时，这份特别适合抽出“家长须知”“使用边界”“防依赖提示语”。
+UNICEF《Child Safety Online》
+适合做“在线安全规则库”，涵盖网络风险、儿童保护、平台责任等内容。你的产品如果涉及开放聊天、图片、语音、社交化元素，这份很值得纳入。
+CDC《Milestone Checklists by Age》
+这是做“年龄分层对话知识库”非常实用的一组资料。它按月龄/年龄给出发展里程碑，而且页面明确提供各年龄段下载项；CDC 还提供 中文等多语言版本。你可以按 2 月、4 月、1 岁、2 岁、3 岁、4 岁、5 岁拆成不同知识分片。
+CDC《Milestone Moments Booklet》
+如果你想要一份更像“总览手册”的资料，这份比单张 checklist 更完整，适合做“年龄能力画像库”，帮助模型判断某年龄段更适合什么样的语言难度、互动方式和游戏建议。
+WHO/UNICEF《Care for Child Development Participant Manual》
+这份很适合做“陪伴对话内容库”。它核心是 游戏、沟通、回应式照护，非常贴近儿童陪伴场景，可以抽取成“陪聊脚本、亲子活动建议、互动任务模板”。
+UNICEF《Learning through Play》
+适合做“教育型陪伴知识库”。如果你的 AI 不只是聊天，还要会讲故事、做小游戏、引导观察、鼓励表达，这份关于 play-based learning 的材料很合适。
+UNICEF《Caring for the Caregiver Overview Guide》
+这份不是直接给孩子的，而是很适合做“家长支持库/监护人沟通库”。儿童陪伴软件如果设计得更完整，通常还需要输出给家长的解释、建议、观察提示，这份正好补这块。
+
+
+UNICEF 中国《儿童网络安全家长小贴士》
+中文 PDF，适合直接做“家长端 FAQ”或“监护提示库”。
+ITU《保护在线儿童儿童指南》中文版
+中文 PDF，适合做“儿童上网安全基础知识库”，尤其是安全提醒、陌生人风险、行为规范这类模块。
+UNICEF 中国《数字时代的儿童》
+这份更偏宏观背景，适合做“产品立项/需求分析/风险说明”的参考底稿，不如前两份那么直接面向对话，但对产品定位很有帮助。

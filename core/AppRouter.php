@@ -9,6 +9,7 @@ use App\Controllers\SignIn;
 use App\Controllers\UpdateProfile;
 use App\Controllers\KnowledgeController;
 use App\Controllers\ConversationController;
+use App\Controllers\ChatController;
 use Utils\Helper;
 
 use Bramus\Router\Router;
@@ -156,6 +157,55 @@ class AppRouter
             $controller->listFiles();
         });
 
+        $router->get('/api/knowledge/files/([^/]+)', function ($fileId) {
+            Middleware::requireAuth();
+            Middleware::requireAdmin();
+            $controller = new KnowledgeController();
+            $controller->getFile($fileId);
+        });
+
+        $router->get('/api/knowledge/files/([^/]+)/status', function ($fileId) {
+            Middleware::requireAuth();
+            Middleware::requireAdmin();
+            $controller = new KnowledgeController();
+            $controller->getFileStatus($fileId);
+        });
+
+        $router->post('/api/knowledge/files/([^/]+)/update', function ($fileId) {
+            Middleware::requireAuth();
+            Middleware::requireAdmin();
+            $controller = new KnowledgeController();
+            $controller->updateFile($fileId);
+        });
+
+        $router->get('/api/knowledge/files/([^/]+)/chunks', function ($fileId) {
+            Middleware::requireAuth();
+            Middleware::requireAdmin();
+            $controller = new KnowledgeController();
+            $controller->getChunks($fileId);
+        });
+
+        $router->get('/api/knowledge/files/([^/]+)/chunks/([^/]+)', function ($fileId, $chunkId) {
+            Middleware::requireAuth();
+            Middleware::requireAdmin();
+            $controller = new KnowledgeController();
+            $controller->getChunk($fileId, $chunkId);
+        });
+
+        $router->post('/api/knowledge/files/([^/]+)/chunks/bulk-update', function ($fileId) {
+            Middleware::requireAuth();
+            Middleware::requireAdmin();
+            $controller = new KnowledgeController();
+            $controller->bulkUpdateChunks($fileId);
+        });
+
+        $router->post('/api/knowledge/files/([^/]+)/actions/([^/]+)', function ($fileId, $action) {
+            Middleware::requireAuth();
+            Middleware::requireAdmin();
+            $controller = new KnowledgeController();
+            $controller->queueAction($fileId, $action);
+        });
+
         $router->post('/api/knowledge/upload', function () {
             Middleware::requireAuth();
             Middleware::requireAdmin();
@@ -186,6 +236,12 @@ class AppRouter
         $router->get('/api/knowledge/context', function () {
             $controller = new KnowledgeController();
             $controller->getContext();
+        });
+
+        $router->post('/api/chat/reply', function () {
+            Middleware::requireAuth();
+            $controller = new ChatController();
+            $controller->reply();
         });
 
         // Conversation API routes

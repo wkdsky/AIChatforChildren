@@ -16,3 +16,8 @@ RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ index.php [QSA,L]
 
 </IfModule>
+
+<IfModule mod_php.c>
+php_value upload_max_filesize 20M
+php_value post_max_size 24M
+</IfModule>

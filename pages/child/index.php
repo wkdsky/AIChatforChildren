@@ -405,9 +405,9 @@ include("connect.php");
     </div>
 
     <script>
-        const DEEPSEEK_API_KEY = "<?= $_ENV['LLM_API_KEY'] ?>";
-        const DEEPSEEK_API_URL = "<?= $_ENV['LLM_API_URL'] ?>";
+        const CHAT_API_URL = "<?= Helper::url('api/chat/reply') ?>";
         const API_BASE_URL = "<?= Helper::url('api/conversations') ?>";
+        const CSRF_TOKEN = "<?= htmlspecialchars($csrfToken, ENT_QUOTES) ?>";
 
         // Language configuration - centralized translations
         const translations = {
@@ -1179,37 +1179,38 @@ include("connect.php");
             saveMessage('user', userMessage);
 
             abortController = new AbortController();
+            let aiMessageDiv = null;
+            let fullResponse = "";
 
             try {
-                const response = await fetch(DEEPSEEK_API_URL, {
+                const response = await fetch(CHAT_API_URL, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
+                        'X-CSRF-TOKEN': CSRF_TOKEN
                     },
                     body: JSON.stringify({
-                        model: "deepseek-chat",
-                        messages: conversationHistory,
-                        temperature: 0.7,
-                        max_tokens: 2000,
-                        stream: true
+                        user_message: userMessage,
+                        messages: conversationHistory
                     }),
                     signal: abortController.signal
                 });
 
-                if (!response.ok) {
+                const contentType = response.headers.get('content-type') || '';
+
+                if (!response.ok && !contentType.includes('text/event-stream')) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
                 typingIndicator.style.display = 'none';
 
-                const aiMessageDiv = document.createElement("div");
+                aiMessageDiv = document.createElement("div");
                 aiMessageDiv.classList.add("message");
                 chatBox.insertBefore(aiMessageDiv, typingIndicator);
 
-                let fullResponse = "";
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
+                let streamBuffer = "";
 
                 while (true) {
                     const {
@@ -1218,31 +1219,46 @@ include("connect.php");
                     } = await reader.read();
                     if (done) break;
 
-                    const chunk = decoder.decode(value);
-                    const lines = chunk.split('\n');
+                    streamBuffer += decoder.decode(value, { stream: true });
+                    const events = streamBuffer.split('\n\n');
+                    streamBuffer = events.pop() || '';
 
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const data = line.slice(6);
+                    for (const event of events) {
+                        const data = event
+                            .split('\n')
+                            .filter(line => line.startsWith('data: '))
+                            .map(line => line.slice(6))
+                            .join('\n')
+                            .trim();
 
-                            if (data.trim() === '[DONE]') {
-                                continue;
+                        if (!data || data === '[DONE]') {
+                            continue;
+                        }
+
+                        try {
+                            const parsed = JSON.parse(data);
+
+                            if (parsed.error) {
+                                throw new Error(parsed.error);
                             }
 
-                            try {
-                                const parsed = JSON.parse(data);
-                                const content = parsed.choices?.[0]?.delta?.content;
+                            const content = parsed.choices?.[0]?.delta?.content;
 
-                                if (content) {
-                                    fullResponse += content;
-                                    aiMessageDiv.textContent = fullResponse;
-                                    chatBox.scrollTop = chatBox.scrollHeight;
-                                }
-                            } catch (e) {
-                                // Skip invalid JSON
+                            if (content) {
+                                fullResponse += content;
+                                aiMessageDiv.textContent = fullResponse;
+                                chatBox.scrollTop = chatBox.scrollHeight;
+                            }
+                        } catch (e) {
+                            if (data.startsWith('{') && e instanceof Error && e.message) {
+                                throw e;
                             }
                         }
                     }
+                }
+
+                if (!fullResponse.trim()) {
+                    throw new Error('Empty response from assistant');
                 }
 
                 conversationHistory.push({
@@ -1268,6 +1284,9 @@ include("connect.php");
                     addSystemMessage(abortMsg);
                     console.log("用户中断了响应");
                 } else {
+                    if (aiMessageDiv && !fullResponse.trim()) {
+                        aiMessageDiv.remove();
+                    }
                     console.error("Error:", error);
                     const errorMsg = currentLanguage === 'zh-CN' ? "抱歉,发生错误。请重试。" : "Sorry, an error occurred. Please try again.";
                     addErrorMessage(errorMsg);

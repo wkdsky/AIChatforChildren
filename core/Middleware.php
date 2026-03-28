@@ -6,6 +6,28 @@ use Utils\Helper;
 
 class Middleware
 {
+    private static function isApiRequest(): bool
+    {
+        $uri = $_SERVER['REQUEST_URI'] ?? '';
+        $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
+        $requestedWith = $_SERVER['HTTP_X_REQUESTED_WITH'] ?? '';
+
+        return str_contains($uri, '/api/')
+            || str_contains($accept, 'application/json')
+            || strtolower($requestedWith) === 'xmlhttprequest';
+    }
+
+    private static function jsonError(string $message, int $statusCode): void
+    {
+        http_response_code($statusCode);
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => false,
+            'error' => $message,
+        ]);
+        exit;
+    }
+
     /**
      * Check if the user is authenticated.
      * Redirect to sign-in page if not logged in.
@@ -13,7 +35,9 @@ class Middleware
     public static function requireAuth()
     {
         if (!isset($_SESSION['user'])) {
-            // $_SESSION['errors']['auth'][] = "You must be signed in to access this page.";
+            if (self::isApiRequest()) {
+                self::jsonError('Authentication required', 401);
+            }
             header("Location: " . Helper::url('sign-in'));
             exit;
         }
@@ -55,6 +79,9 @@ class Middleware
     public static function requireAdmin()
     {
         if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'admin') {
+            if (self::isApiRequest()) {
+                self::jsonError('Admin access required', isset($_SESSION['user']) ? 403 : 401);
+            }
             header("Location: " . Helper::url('home'));
             exit;
         }
@@ -67,6 +94,9 @@ class Middleware
     public static function requireParent()
     {
         if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'parent') {
+            if (self::isApiRequest()) {
+                self::jsonError('Parent access required', isset($_SESSION['user']) ? 403 : 401);
+            }
             header("Location: " . Helper::url('home'));
             exit;
         }
@@ -79,6 +109,9 @@ class Middleware
     public static function requireChild()
     {
         if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'child') {
+            if (self::isApiRequest()) {
+                self::jsonError('Child access required', isset($_SESSION['user']) ? 403 : 401);
+            }
             header("Location: " . Helper::url('home'));
             exit;
         }
@@ -96,6 +129,9 @@ class Middleware
         ) {
             session_unset();
             session_destroy();
+            if (self::isApiRequest()) {
+                self::jsonError('Session expired, please sign in again', 401);
+            }
             header("Location: " . Helper::url('sign-in'));
             exit;
         }

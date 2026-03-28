@@ -26,7 +26,7 @@ class KnowledgeController
     {
         $phpLimit = $this->parseSize(ini_get('upload_max_filesize'));
         $postLimit = $this->parseSize(ini_get('post_max_size'));
-        $envLimit = $this->parseSize(($_ENV['CHROMA_MAX_FILE_SIZE'] ?? '2') . 'M');
+        $envLimit = $this->parseSize(($_ENV['CHROMA_MAX_FILE_SIZE'] ?? '20') . 'M');
 
         return min($phpLimit, $postLimit, $envLimit);
     }
@@ -89,6 +89,57 @@ class KnowledgeController
     }
 
     /**
+     * Inspect service API compatibility against the admin knowledge page requirements
+     */
+    private function inspectServiceApi(): array
+    {
+        $requiredEndpoints = [
+            '/api/upload' => ['post'],
+            '/api/files' => ['get'],
+            '/api/files/{file_id}' => ['get', 'put', 'delete'],
+            '/api/files/{file_id}/status' => ['get'],
+            '/api/files/{file_id}/chunks' => ['get'],
+            '/api/files/{file_id}/chunks/{chunk_id}' => ['get'],
+            '/api/files/{file_id}/chunks/bulk' => ['put'],
+            '/api/files/{file_id}/actions/{action}' => ['post'],
+            '/api/search' => ['get'],
+            '/api/context' => ['get'],
+        ];
+
+        $result = $this->proxyRequest('/openapi.json');
+        if (!$result['success'] || $result['code'] !== 200 || !is_array($result['data'])) {
+            return [
+                'compatible' => false,
+                'missing' => array_keys($requiredEndpoints),
+                'required' => $requiredEndpoints,
+            ];
+        }
+
+        $paths = $result['data']['paths'] ?? [];
+        $missing = [];
+
+        foreach ($requiredEndpoints as $path => $methods) {
+            if (!isset($paths[$path]) || !is_array($paths[$path])) {
+                $missing[] = $path;
+                continue;
+            }
+
+            $availableMethods = array_map('strtolower', array_keys($paths[$path]));
+            foreach ($methods as $method) {
+                if (!in_array(strtolower($method), $availableMethods, true)) {
+                    $missing[] = $path . ' [' . strtoupper($method) . ']';
+                }
+            }
+        }
+
+        return [
+            'compatible' => empty($missing),
+            'missing' => $missing,
+            'required' => $requiredEndpoints,
+        ];
+    }
+
+    /**
      * Send JSON response
      */
     private function jsonResponse(array $data, int $statusCode = 200): void
@@ -97,6 +148,12 @@ class KnowledgeController
         header('Content-Type: application/json');
         echo json_encode($data);
         exit;
+    }
+
+    private function getJsonInput(): array
+    {
+        $decoded = json_decode(file_get_contents('php://input'), true);
+        return is_array($decoded) ? $decoded : [];
     }
 
     /**
@@ -133,6 +190,11 @@ class KnowledgeController
                             $file['type'],
                             $file['name']
                         );
+                    }
+                    if ($data) {
+                        foreach ($data as $key => $value) {
+                            $postData[$key] = $value;
+                        }
                     }
                     $options[CURLOPT_POSTFIELDS] = $postData;
                 } elseif ($data) {
@@ -211,7 +273,13 @@ class KnowledgeController
             $this->jsonResponse(['success' => false, 'error' => $errorMsg], 400);
         }
 
-        $result = $this->proxyRequest('/api/upload', 'POST', null, ['file' => $_FILES['file']]);
+        $title = isset($_POST['title']) ? trim((string)$_POST['title']) : null;
+        $payload = [];
+        if ($title !== null && $title !== '') {
+            $payload['title'] = $title;
+        }
+
+        $result = $this->proxyRequest('/api/upload', 'POST', $payload, ['file' => $_FILES['file']]);
 
         if (!$result['success']) {
             $this->jsonResponse(['success' => false, 'error' => $result['error']], $result['code']);
@@ -225,7 +293,29 @@ class KnowledgeController
      */
     public function listFiles(): void
     {
-        $result = $this->proxyRequest('/api/files');
+        $params = [];
+
+        $search = isset($_GET['search']) ? trim((string)$_GET['search']) : '';
+        if ($search !== '') {
+            $params[] = 'search=' . urlencode($search);
+        }
+
+        $audience = isset($_GET['audience']) ? trim((string)$_GET['audience']) : '';
+        if ($audience !== '') {
+            $params[] = 'audience=' . urlencode($audience);
+        }
+
+        $reviewStatus = isset($_GET['review_status']) ? trim((string)$_GET['review_status']) : '';
+        if ($reviewStatus !== '') {
+            $params[] = 'review_status=' . urlencode($reviewStatus);
+        }
+
+        $endpoint = '/api/files';
+        if (!empty($params)) {
+            $endpoint .= '?' . implode('&', $params);
+        }
+
+        $result = $this->proxyRequest($endpoint);
 
         if (!$result['success']) {
             $this->jsonResponse(['success' => false, 'error' => $result['error']], $result['code']);
@@ -245,7 +335,7 @@ class KnowledgeController
 
         $this->verifyCsrf();
 
-        $input = json_decode(file_get_contents('php://input'), true);
+        $input = $this->getJsonInput();
         $fileId = $input['file_id'] ?? null;
 
         if (!$fileId) {
@@ -272,7 +362,7 @@ class KnowledgeController
 
         $this->verifyCsrf();
 
-        $input = json_decode(file_get_contents('php://input'), true);
+        $input = $this->getJsonInput();
         $fileId = $input['file_id'] ?? null;
         $newName = $input['new_name'] ?? null;
 
@@ -299,14 +389,142 @@ class KnowledgeController
     {
         $query = $_GET['query'] ?? '';
         $limit = (int)($_GET['limit'] ?? 5);
+        $sessionType = $_GET['session_type'] ?? 'system';
+        $ageBand = $_GET['age_band'] ?? null;
+        $includeFiltered = $_GET['include_filtered'] ?? null;
 
         if (empty($query)) {
             $this->jsonResponse(['success' => false, 'error' => 'Query is required'], 400);
         }
 
-        $result = $this->proxyRequest(
-            '/api/search?query=' . urlencode($query) . '&limit=' . $limit
-        );
+        $endpoint = '/api/search?query=' . urlencode($query)
+            . '&limit=' . $limit
+            . '&session_type=' . urlencode($sessionType);
+
+        if ($ageBand) {
+            $endpoint .= '&age_band=' . urlencode($ageBand);
+        }
+
+        if ($includeFiltered !== null) {
+            $endpoint .= '&include_filtered=' . urlencode((string) $includeFiltered);
+        }
+
+        $result = $this->proxyRequest($endpoint);
+
+        if (!$result['success']) {
+            $this->jsonResponse(['success' => false, 'error' => $result['error']], $result['code']);
+        }
+
+        $this->jsonResponse($result['data'], $result['code']);
+    }
+
+    public function getFile(string $fileId): void
+    {
+        $result = $this->proxyRequest('/api/files/' . urlencode($fileId));
+
+        if (!$result['success']) {
+            $this->jsonResponse(['success' => false, 'error' => $result['error']], $result['code']);
+        }
+
+        $this->jsonResponse($result['data'], $result['code']);
+    }
+
+    public function getFileStatus(string $fileId): void
+    {
+        $result = $this->proxyRequest('/api/files/' . urlencode($fileId) . '/status');
+
+        if (!$result['success']) {
+            $this->jsonResponse(['success' => false, 'error' => $result['error']], $result['code']);
+        }
+
+        $this->jsonResponse($result['data'], $result['code']);
+    }
+
+    public function updateFile(string $fileId): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->jsonResponse(['success' => false, 'error' => 'Method not allowed'], 405);
+        }
+
+        $this->verifyCsrf();
+
+        $input = $this->getJsonInput();
+        unset($input['csrf_token']);
+
+        $result = $this->proxyRequest('/api/files/' . urlencode($fileId), 'PUT', $input);
+
+        if (!$result['success']) {
+            $this->jsonResponse(['success' => false, 'error' => $result['error']], $result['code']);
+        }
+
+        $this->jsonResponse($result['data'], $result['code']);
+    }
+
+    public function getChunks(string $fileId): void
+    {
+        $params = [];
+        $supported = ['search', 'visibility', 'audience', 'age_band', 'retrieval_enabled', 'sort_by', 'sort_dir'];
+
+        foreach ($supported as $key) {
+            if (isset($_GET[$key]) && $_GET[$key] !== '') {
+                $params[] = urlencode($key) . '=' . urlencode((string) $_GET[$key]);
+            }
+        }
+
+        $endpoint = '/api/files/' . urlencode($fileId) . '/chunks';
+        if (!empty($params)) {
+            $endpoint .= '?' . implode('&', $params);
+        }
+
+        $result = $this->proxyRequest($endpoint);
+
+        if (!$result['success']) {
+            $this->jsonResponse(['success' => false, 'error' => $result['error']], $result['code']);
+        }
+
+        $this->jsonResponse($result['data'], $result['code']);
+    }
+
+    public function getChunk(string $fileId, string $chunkId): void
+    {
+        $result = $this->proxyRequest('/api/files/' . urlencode($fileId) . '/chunks/' . urlencode($chunkId));
+
+        if (!$result['success']) {
+            $this->jsonResponse(['success' => false, 'error' => $result['error']], $result['code']);
+        }
+
+        $this->jsonResponse($result['data'], $result['code']);
+    }
+
+    public function bulkUpdateChunks(string $fileId): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->jsonResponse(['success' => false, 'error' => 'Method not allowed'], 405);
+        }
+
+        $this->verifyCsrf();
+
+        $input = $this->getJsonInput();
+        unset($input['csrf_token']);
+
+        $result = $this->proxyRequest('/api/files/' . urlencode($fileId) . '/chunks/bulk', 'PUT', $input);
+
+        if (!$result['success']) {
+            $this->jsonResponse(['success' => false, 'error' => $result['error']], $result['code']);
+        }
+
+        $this->jsonResponse($result['data'], $result['code']);
+    }
+
+    public function queueAction(string $fileId, string $action): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->jsonResponse(['success' => false, 'error' => 'Method not allowed'], 405);
+        }
+
+        $this->verifyCsrf();
+
+        $result = $this->proxyRequest('/api/files/' . urlencode($fileId) . '/actions/' . urlencode($action), 'POST');
 
         if (!$result['success']) {
             $this->jsonResponse(['success' => false, 'error' => $result['error']], $result['code']);
@@ -322,14 +540,22 @@ class KnowledgeController
     {
         $query = $_GET['query'] ?? '';
         $limit = (int)($_GET['limit'] ?? 3);
+        $sessionType = $_GET['session_type'] ?? 'child';
+        $ageBand = $_GET['age_band'] ?? null;
 
         if (empty($query)) {
             $this->jsonResponse(['context' => '', 'sources' => []], 200);
         }
 
-        $result = $this->proxyRequest(
-            '/api/context?query=' . urlencode($query) . '&limit=' . $limit
-        );
+        $endpoint = '/api/context?query=' . urlencode($query)
+            . '&limit=' . $limit
+            . '&session_type=' . urlencode($sessionType);
+
+        if ($ageBand) {
+            $endpoint .= '&age_band=' . urlencode($ageBand);
+        }
+
+        $result = $this->proxyRequest($endpoint);
 
         if (!$result['success']) {
             $this->jsonResponse(['context' => '', 'sources' => []], 200);
@@ -345,13 +571,32 @@ class KnowledgeController
     {
         $isRunning = $this->isServiceRunning();
         $maxSize = $this->getMaxUploadSize();
+        $serviceVersion = null;
+        $compatibility = [
+            'compatible' => false,
+            'missing' => [],
+            'required' => [],
+        ];
+
+        if ($isRunning) {
+            $healthResult = $this->proxyRequest('/api/health');
+            if ($healthResult['success'] && $healthResult['code'] === 200 && is_array($healthResult['data'])) {
+                $serviceVersion = $healthResult['data']['version'] ?? null;
+            }
+            $compatibility = $this->inspectServiceApi();
+        }
 
         $this->jsonResponse([
             'success' => true,
             'service_running' => $isRunning,
-            'message' => $isRunning
-                ? 'Knowledge base service is running'
-                : 'Knowledge base service is not running',
+            'service_version' => $serviceVersion,
+            'api_compatible' => $isRunning ? $compatibility['compatible'] : false,
+            'missing_endpoints' => $compatibility['missing'],
+            'message' => !$isRunning
+                ? 'Knowledge base service is not running'
+                : ($compatibility['compatible']
+                    ? 'Knowledge base service is running'
+                    : 'Knowledge base service is running but uses an older API surface'),
             'config' => [
                 'max_file_size' => $maxSize,
                 'max_file_size_formatted' => $this->formatSize($maxSize),
