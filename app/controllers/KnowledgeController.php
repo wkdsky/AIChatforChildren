@@ -267,28 +267,131 @@ class KnowledgeController
         return $exitCode === 0 && !empty($output);
     }
 
-    private function validatePythonPath(string $pythonPath): ?string
+    private function resolveCommandPath(string $command): ?string
     {
-        $trimmed = trim($pythonPath);
+        $trimmed = trim($command);
         if ($trimmed === '') {
-            return 'CHROMA_PYTHON_PATH is empty.';
+            return null;
         }
 
         if (str_contains($trimmed, DIRECTORY_SEPARATOR)) {
-            if (!file_exists($trimmed)) {
-                return 'Configured Python path does not exist: ' . $trimmed;
-            }
-            if (!is_executable($trimmed)) {
-                return 'Configured Python path is not executable: ' . $trimmed;
+            if (file_exists($trimmed) && is_executable($trimmed)) {
+                return $trimmed;
             }
             return null;
         }
 
         if (!$this->commandExists($trimmed)) {
-            return 'Python command not found in PATH: ' . $trimmed;
+            return null;
         }
 
-        return null;
+        $output = [];
+        $exitCode = 1;
+        @exec('command -v ' . escapeshellarg($trimmed) . ' 2>/dev/null', $output, $exitCode);
+        if ($exitCode !== 0 || empty($output[0])) {
+            return null;
+        }
+
+        return trim((string) $output[0]);
+    }
+
+    private function pythonSupportsKnowledgeRebuild(string $pythonPath): bool
+    {
+        if (!function_exists('exec')) {
+            return false;
+        }
+
+        $command = sprintf(
+            '%s -c %s 2>/dev/null',
+            escapeshellarg($pythonPath),
+            escapeshellarg('import chromadb, fastapi, pymysql')
+        );
+
+        $output = [];
+        $exitCode = 1;
+        @exec($command, $output, $exitCode);
+        return $exitCode === 0;
+    }
+
+    private function resolvePythonRuntime(): array
+    {
+        $configured = trim((string) ($_ENV['CHROMA_PYTHON_PATH'] ?? ''));
+        $candidates = [];
+        $warnings = [];
+
+        if ($configured !== '') {
+            $candidates[] = [
+                'label' => $configured,
+                'source' => 'env',
+            ];
+        }
+
+        foreach ([
+            'python3',
+            'python',
+            $this->projectRoot . '/.venv/bin/python',
+            $this->projectRoot . '/venv/bin/python',
+            getenv('VIRTUAL_ENV') ? rtrim((string) getenv('VIRTUAL_ENV'), '/') . '/bin/python' : '',
+            getenv('CONDA_PREFIX') ? rtrim((string) getenv('CONDA_PREFIX'), '/') . '/bin/python' : '',
+            '/opt/homebrew/bin/python3',
+            '/usr/local/bin/python3',
+            '/usr/bin/python3',
+            '/opt/anaconda3/bin/python',
+        ] as $candidate) {
+            $candidate = trim((string) $candidate);
+            if ($candidate === '') {
+                continue;
+            }
+            $candidates[] = [
+                'label' => $candidate,
+                'source' => 'auto',
+            ];
+        }
+
+        $seen = [];
+        foreach ($candidates as $candidate) {
+            $label = $candidate['label'];
+            if (isset($seen[$label])) {
+                continue;
+            }
+            $seen[$label] = true;
+
+            $resolved = $this->resolveCommandPath($label);
+            if ($resolved === null) {
+                if ($candidate['source'] === 'env') {
+                    $warnings[] = 'Configured Python path does not exist or is not executable: ' . $label;
+                }
+                continue;
+            }
+
+            if (!$this->pythonSupportsKnowledgeRebuild($resolved)) {
+                if ($candidate['source'] === 'env') {
+                    $warnings[] = 'Configured Python environment is missing chromadb/fastapi/pymysql: ' . $resolved;
+                }
+                continue;
+            }
+
+            return [
+                'ok' => true,
+                'command' => $resolved,
+                'source' => $candidate['source'],
+                'configured' => $configured,
+                'warnings' => $warnings,
+            ];
+        }
+
+        $message = $configured !== ''
+            ? 'Configured Python path is unavailable, and no compatible fallback Python runtime was found.'
+            : 'No compatible Python runtime found. Set CHROMA_PYTHON_PATH or install chromadb dependencies into python3.';
+
+        return [
+            'ok' => false,
+            'command' => null,
+            'source' => null,
+            'configured' => $configured,
+            'warnings' => $warnings,
+            'error' => $message,
+        ];
     }
 
     private function getKnowledgeRebuildStatusPayload(): array
@@ -767,6 +870,8 @@ class KnowledgeController
             $compatibility = $this->inspectServiceApi();
         }
 
+        $pythonRuntime = $this->resolvePythonRuntime();
+
         $this->jsonResponse([
             'success' => true,
             'service_running' => $isRunning,
@@ -781,7 +886,11 @@ class KnowledgeController
             'config' => [
                 'max_file_size' => $maxSize,
                 'max_file_size_formatted' => $this->formatSize($maxSize),
-                'python_path' => $_ENV['CHROMA_PYTHON_PATH'] ?? '/home/wkd/miniconda3/envs/py39/bin/python',
+                'python_path' => $pythonRuntime['command'] ?? ($_ENV['CHROMA_PYTHON_PATH'] ?? 'python3'),
+                'python_source' => $pythonRuntime['source'] ?? 'unresolved',
+                'python_runtime_ok' => (bool) ($pythonRuntime['ok'] ?? false),
+                'python_warnings' => $pythonRuntime['warnings'] ?? [],
+                'python_error' => $pythonRuntime['error'] ?? null,
                 'service_host' => $_ENV['CHROMA_SERVICE_HOST'] ?? '127.0.0.1',
                 'service_port' => $_ENV['CHROMA_SERVICE_PORT'] ?? '4001',
             ]
@@ -828,18 +937,15 @@ class KnowledgeController
             ], 409);
         }
 
-        $pythonPath = trim((string) ($_ENV['CHROMA_PYTHON_PATH'] ?? 'python3'));
-        if ($pythonPath === '') {
-            $pythonPath = 'python3';
-        }
-
-        $pythonError = $this->validatePythonPath($pythonPath);
-        if ($pythonError !== null) {
+        $pythonRuntime = $this->resolvePythonRuntime();
+        if (empty($pythonRuntime['ok']) || empty($pythonRuntime['command'])) {
             $this->jsonResponse([
                 'success' => false,
-                'error' => $pythonError,
+                'error' => $pythonRuntime['error'] ?? 'No compatible Python runtime found.',
+                'warnings' => $pythonRuntime['warnings'] ?? [],
             ], 500);
         }
+        $pythonPath = (string) $pythonRuntime['command'];
 
         $startedAt = date('c');
         $queuedStatus = [
@@ -855,6 +961,7 @@ class KnowledgeController
             'skipped' => 0,
             'failed' => 0,
             'last_file' => null,
+            'warnings' => $pythonRuntime['warnings'] ?? [],
         ];
 
         try {
@@ -892,7 +999,7 @@ class KnowledgeController
         $pid = isset($output[0]) ? (int) trim((string) $output[0]) : 0;
         if ($exitCode !== 0 || $pid <= 0) {
             $queuedStatus['status'] = 'failed';
-            $queuedStatus['message'] = '无法启动重建进程，请检查 PHP exec/nohup 权限。';
+            $queuedStatus['message'] = '无法启动重建进程，请检查 PHP exec 权限和 Python 运行环境。';
             $queuedStatus['finished_at'] = date('c');
             $this->writeJsonFile($paths['status'], $queuedStatus);
 

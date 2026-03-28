@@ -27,10 +27,10 @@ storage/knowledge/
 
 ## Installation
 
-All dependencies should already be installed in the py39 environment. If needed:
+Install dependencies into the Python environment you will use to run the service. If needed:
 
 ```bash
-/home/wkd/miniconda3/envs/py39/bin/pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 
 ## Running the Service
@@ -46,10 +46,16 @@ cd /var/www/html/AIChatforChildren/services/chroma
 
 ```bash
 cd /var/www/html/AIChatforChildren/services/chroma
-/home/wkd/miniconda3/envs/py39/bin/python main.py
+python3 main.py
 ```
 
 The service will start on `http://127.0.0.1:4001`
+
+`start.sh` and the admin rebuild task both support `CHROMA_PYTHON_PATH`, but they no
+longer depend on a machine-specific absolute path. If `CHROMA_PYTHON_PATH` is empty
+or invalid, the app will try common Python commands and virtualenv locations
+automatically, then choose the first runtime that can import `chromadb`, `fastapi`,
+and `pymysql`.
 
 ## Rebuilding Metadata After Migration
 

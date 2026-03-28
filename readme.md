@@ -467,8 +467,8 @@ starter/
 ```
 
 run chromaDB：
-cd /home/wkd/AIChatforChildren/services/chroma
-/home/wkd/miniconda3/envs/py39/bin/python main.py
+cd ./services/chroma
+python3 main.py
 
 visit router:
 http://localhost:81/AIChatforChildren/sign-in
