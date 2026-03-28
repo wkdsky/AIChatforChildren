@@ -157,7 +157,7 @@ def is_pid_running(pid: Optional[int]) -> bool:
 def get_rebuild_status_payload() -> Dict[str, Any]:
     payload = {
         "status": "idle",
-        "message": "未开始重建任务。",
+        "message": "No rebuild job has started.",
         "started_at": None,
         "finished_at": None,
         "updated_at": None,
@@ -183,7 +183,7 @@ def get_rebuild_status_payload() -> Dict[str, Any]:
 
     if payload.get("status") in {"queued", "running"} and not is_running and not payload.get("finished_at"):
         payload["status"] = "failed"
-        payload["message"] = "重建进程已退出，请检查日志。"
+        payload["message"] = "The rebuild process has exited. Check the logs."
         payload["finished_at"] = now_iso()
         try:
             write_json_file(REBUILD_STATUS_FILE, payload)
@@ -202,7 +202,7 @@ def start_rebuild_process() -> Dict[str, Any]:
 
     queued_status = {
         "status": "queued",
-        "message": "重建任务已排队，等待启动。",
+        "message": "The rebuild job has been queued and is waiting to start.",
         "started_at": now_iso(),
         "finished_at": None,
         "updated_at": now_iso(),
@@ -230,7 +230,7 @@ def start_rebuild_process() -> Dict[str, Any]:
             )
     except Exception as exc:
         queued_status["status"] = "failed"
-        queued_status["message"] = "无法启动重建进程。"
+        queued_status["message"] = "Unable to start the rebuild process."
         queued_status["finished_at"] = now_iso()
         queued_status["warnings"] = [str(exc)]
         try:
@@ -241,7 +241,7 @@ def start_rebuild_process() -> Dict[str, Any]:
 
     queued_status["pid"] = process.pid
     queued_status["status"] = "running"
-    queued_status["message"] = "知识库重建任务已启动。"
+    queued_status["message"] = "Knowledge base rebuild started."
     queued_status["updated_at"] = now_iso()
     write_json_file(REBUILD_STATUS_FILE, queued_status)
     return queued_status
@@ -588,13 +588,13 @@ def build_processing_stages(document: Dict[str, Any]) -> List[Dict[str, str]]:
     )
 
     return [
-        {"key": "saved", "label": "原文件已保存", "status": "completed"},
-        {"key": "parser", "label": "文档解析中", "status": get_status_label(parser_status)},
-        {"key": "chunking", "label": "文本切片中", "status": get_status_label(chunk_status)},
-        {"key": "classification", "label": "自动分类中", "status": classification_status},
-        {"key": "metadata", "label": "自动生成年龄段/受众/可见性/主题中", "status": metadata_status},
-        {"key": "embedding", "label": "构建 embedding / 建立索引中", "status": embedding_stage_status},
-        {"key": "done", "label": "分析完成", "status": final_status},
+        {"key": "saved", "label": "File saved", "status": "completed"},
+        {"key": "parser", "label": "Parsing document", "status": get_status_label(parser_status)},
+        {"key": "chunking", "label": "Chunking text", "status": get_status_label(chunk_status)},
+        {"key": "classification", "label": "Classifying automatically", "status": classification_status},
+        {"key": "metadata", "label": "Generating age bands / audience / visibility / topics", "status": metadata_status},
+        {"key": "embedding", "label": "Building embeddings / indexing", "status": embedding_stage_status},
+        {"key": "done", "label": "Analysis completed", "status": final_status},
     ]
 
 
@@ -854,18 +854,18 @@ def build_search_message(reliable: bool, query_topics: List[str], missing_topic_
     if missing_topic_content and query_topics:
         return {
             "reliable": False,
-            "message": "当前知识库缺少该主题内容",
+            "message": "The current knowledge base does not contain content for this topic.",
             "no_result_reason": "current_topic_missing",
         }
     if reliable and results_count > 0:
         return {
             "reliable": True,
-            "message": "已返回通过相关性阈值的真实检索结果",
+            "message": "Returned real retrieval results that passed the relevance threshold.",
             "no_result_reason": None,
         }
     return {
         "reliable": False,
-        "message": "当前知识库中没有找到可靠的匹配结果",
+        "message": "No reliable match was found in the current knowledge base.",
         "no_result_reason": "no_reliable_match",
     }
 
@@ -1387,7 +1387,7 @@ async def rebuild_status():
 async def rebuild_knowledge_base():
     return {
         "success": True,
-        "message": "知识库重建任务已启动。",
+        "message": "Knowledge base rebuild started.",
         "job": start_rebuild_process(),
     }
 
@@ -1649,7 +1649,7 @@ async def search_knowledge(
             results=[],
             filtered_out=[],
             reliable=False,
-            message="当前没有任何已索引文档，无法执行真实检索",
+            message="There are no indexed documents yet, so real retrieval cannot be performed.",
             no_result_reason="no_indexed_documents",
             query_topics=map_query_topics(query),
             topic_filter_applied=bool(map_query_topics(query)),
@@ -1684,7 +1684,7 @@ async def search_knowledge(
         results=results,
         filtered_out=[],
         reliable=bool(results),
-        message="已返回通过相关性阈值的真实检索结果" if results else "当前知识库中没有找到可靠的匹配结果",
+        message="Returned real retrieval results that passed the relevance threshold." if results else "No reliable match was found in the current knowledge base.",
         no_result_reason=None if results else "no_reliable_match",
         query_topics=map_query_topics(query),
         topic_filter_applied=bool(map_query_topics(query)),

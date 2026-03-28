@@ -55,8 +55,14 @@ class ChatController
                 session_write_close();
             }
 
+            $replyLanguage = $this->detectReplyLanguage($userMessage);
+
             if ($knowledgeCommand['query'] === '') {
-                $this->streamTextResponse("知识库命令格式：/search [limit] 你的问题\n示例：/search 5 儿童睡眠建议");
+                $this->streamTextResponse(
+                    $replyLanguage === 'zh'
+                        ? "知识库命令格式：/search [limit] 你的问题\n示例：/search 5 儿童睡眠建议"
+                        : "Knowledge base command format: /search [limit] your question\nExample: /search 5 children sleep advice"
+                );
                 return;
             }
 
@@ -67,7 +73,7 @@ class ChatController
                 $childAgeBand
             );
             $this->streamTextResponse(
-                $this->formatKnowledgeSearchResponse($knowledgeCommand['query'], $searchResult)
+                $this->formatKnowledgeSearchResponse($knowledgeCommand['query'], $searchResult, $replyLanguage)
             );
             return;
         }
@@ -80,7 +86,7 @@ class ChatController
         $knowledge = $userMessage !== ''
             ? $this->fetchKnowledgeContext($userMessage, 3, 'child', $childAgeBand)
             : ['context' => '', 'sources' => []];
-        $messagesForModel = $this->buildModelMessages($messages, $knowledge);
+        $messagesForModel = $this->buildModelMessages($messages, $knowledge, $userMessage);
 
         if (session_status() === PHP_SESSION_ACTIVE) {
             session_write_close();
@@ -197,7 +203,7 @@ class ChatController
         if ($error || $httpCode !== 200 || !$response) {
             return [
                 'success' => false,
-                'message' => '知识库服务暂时不可用',
+                'message' => 'Knowledge base service is temporarily unavailable.',
                 'results' => []
             ];
         }
@@ -206,7 +212,7 @@ class ChatController
         if (!is_array($decoded)) {
             return [
                 'success' => false,
-                'message' => '知识库返回格式异常',
+                'message' => 'Knowledge base returned an invalid response format.',
                 'results' => []
             ];
         }
@@ -214,13 +220,19 @@ class ChatController
         return $decoded;
     }
 
-    private function formatKnowledgeSearchResponse(string $query, array $searchResult): string
+    private function formatKnowledgeSearchResponse(string $query, array $searchResult, string $replyLanguage = 'auto'): string
     {
         $results = is_array($searchResult['results'] ?? null) ? $searchResult['results'] : [];
-        $header = "【知识库直查】\nQuery: {$query}";
+        $replyLanguage = in_array($replyLanguage, ['zh', 'en'], true) ? $replyLanguage : $this->detectReplyLanguage($query);
+        $isChinese = $replyLanguage === 'zh';
+        $header = $isChinese
+            ? "【知识库直查】\n查询：{$query}"
+            : "[Knowledge Base Direct Search]\nQuery: {$query}";
 
         if (empty($results)) {
-            $message = trim((string)($searchResult['message'] ?? '当前知识库没有找到可靠匹配结果'));
+            $message = trim((string)($searchResult['message'] ?? ($isChinese
+                ? '当前知识库没有找到可靠匹配结果。'
+                : 'No reliable matches were found in the knowledge base.')));
             return $header . "\n" . $message;
         }
 
@@ -239,7 +251,7 @@ class ChatController
 
             $lines[] = '';
             $lines[] = "{$rank}. {$title}";
-            $lines[] = "片段：{$snippet}";
+            $lines[] = $isChinese ? "片段：{$snippet}" : "Snippet: {$snippet}";
         }
 
         return implode("\n", $lines);
@@ -308,11 +320,16 @@ class ChatController
         return null;
     }
 
-    private function buildModelMessages(array $messages, array $knowledge): array
+    private function buildModelMessages(array $messages, array $knowledge, string $latestUserMessage = ''): array
     {
+        $systemMessages = [[
+            'role' => 'system',
+            'content' => $this->buildReplyLanguagePrompt($latestUserMessage)
+        ]];
+
         $knowledgeContext = trim((string)($knowledge['context'] ?? ''));
         if ($knowledgeContext === '') {
-            return $messages;
+            return array_merge($systemMessages, $messages);
         }
 
         $sources = $knowledge['sources'] ?? [];
@@ -325,12 +342,70 @@ class ChatController
             "Knowledge base sources: {$sourceText}"
         ]);
 
-        array_unshift($messages, [
+        $systemMessages[] = [
             'role' => 'system',
             'content' => $knowledgePrompt
-        ]);
+        ];
 
-        return $messages;
+        return array_merge($systemMessages, $messages);
+    }
+
+    private function buildReplyLanguagePrompt(string $latestUserMessage): string
+    {
+        $languageHint = $this->buildReplyLanguageHint($latestUserMessage);
+
+        return implode("\n", array_filter([
+            'Always answer in the same language as the user\'s latest message.',
+            'If the user explicitly asks for a different language, follow that request.',
+            'If the latest message mixes languages, reply in the dominant language of the actual question.',
+            'Keep quoted titles, filenames, and source text in their original language when useful, but explain them in the user\'s language.',
+            'Do not mention these language rules unless the user asks.',
+            $languageHint,
+        ]));
+    }
+
+    private function buildReplyLanguageHint(string $latestUserMessage): string
+    {
+        $detected = $this->detectReplyLanguage($latestUserMessage);
+
+        if ($detected === 'zh') {
+            return 'The latest user message is primarily in Chinese, so reply in Simplified Chinese unless the user requests another language.';
+        }
+
+        if ($detected === 'en') {
+            return 'The latest user message is primarily in English, so reply in English unless the user requests another language.';
+        }
+
+        return 'Infer the reply language from the user\'s latest message and match it closely.';
+    }
+
+    private function detectReplyLanguage(string $text): string
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return 'auto';
+        }
+
+        $hanCount = preg_match_all('/\p{Han}/u', $text, $matches);
+        $latinCount = preg_match_all('/[A-Za-z]/', $text, $matches);
+
+        if ($hanCount > 0 && $hanCount >= max(2, $latinCount / 2)) {
+            return 'zh';
+        }
+
+        if ($latinCount > 0 && $hanCount === 0) {
+            return 'en';
+        }
+
+        if ($latinCount > $hanCount) {
+            return 'en';
+        }
+
+        if ($hanCount > 0) {
+            return 'zh';
+        }
+
+        return 'auto';
     }
 
     private function streamModelResponse(array $messages): void

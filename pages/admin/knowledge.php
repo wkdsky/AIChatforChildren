@@ -234,6 +234,42 @@ $baseUrl = Helper::url('');
             color: #102a43;
         }
 
+        .kb-input-wrap {
+            position: relative;
+        }
+
+        .kb-input-wrap input {
+            padding-right: 38px;
+        }
+
+        .kb-input-clear {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 24px;
+            border: none;
+            border-radius: 999px;
+            background: #d9e2ec;
+            color: #243b53;
+            font-size: 16px;
+            line-height: 1;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .kb-input-wrap.has-value .kb-input-clear {
+            display: inline-flex;
+        }
+
+        .kb-input-clear:hover {
+            background: #bcccdc;
+        }
+
         .kb-field textarea {
             min-height: 110px;
             resize: vertical;
@@ -729,7 +765,7 @@ $baseUrl = Helper::url('');
         <div class="main-content">
             <div class="content-header">
                 <h1>Knowledge Base Management</h1>
-                <p class="breadcrumb">儿童陪伴 AI 知识库上传、自动分析与审查</p>
+                <p class="breadcrumb">Upload, auto-analyze, and review the AI companion knowledge base for children</p>
             </div>
 
             <div class="kb-shell">
@@ -737,13 +773,13 @@ $baseUrl = Helper::url('');
 
                 <div class="kb-topbar">
                     <div class="kb-tabs">
-                        <button class="kb-tab" data-view="documents">文档列表</button>
-                        <button class="kb-tab" data-view="upload">上传</button>
+                        <button class="kb-tab" data-view="documents">Documents</button>
+                        <button class="kb-tab" data-view="upload">Upload</button>
                     </div>
 
                     <div id="serviceStatus" class="kb-status offline">
                         <span class="kb-status-dot"></span>
-                        <span>服务检查中</span>
+                        <span>Checking service...</span>
                     </div>
                 </div>
 
@@ -755,9 +791,9 @@ $baseUrl = Helper::url('');
     <div id="chunkModal" class="kb-modal">
         <div class="kb-modal-card">
             <div class="kb-section-head">
-                <h3>Chunk 详情</h3>
+                <h3>Chunk Details</h3>
                 <button class="kb-btn ghost" id="closeChunkModalBtn">
-                    <i class="fas fa-times"></i> 关闭
+                    <i class="fas fa-times"></i> Close
                 </button>
             </div>
             <div id="chunkModalBody"></div>
@@ -800,7 +836,7 @@ $baseUrl = Helper::url('');
             maxFileSize: 20 * 1024 * 1024,
             rebuild: {
                 status: 'idle',
-                message: '未开始重建任务。',
+                message: 'No rebuild job has started.',
                 startedAt: null,
                 finishedAt: null,
                 updatedAt: null,
@@ -823,6 +859,8 @@ $baseUrl = Helper::url('');
                 uploadedBytes: 0,
                 lastUploadedDocId: null,
             },
+            recentUploadDocIds: [],
+            recentUploadStatuses: {},
             docFilters: {
                 search: '',
                 ageBand: '',
@@ -840,6 +878,8 @@ $baseUrl = Helper::url('');
             selectedChunkIds: [],
             statusPollTimer: null,
             rebuildPollTimer: null,
+            recentUploadPollTimer: null,
+            pendingViewAlert: null,
         };
 
         const appRoot = document.getElementById('appRoot');
@@ -879,6 +919,7 @@ $baseUrl = Helper::url('');
 
         function handleRoute() {
             clearStatusPolling();
+            clearRecentUploadPolling();
             const route = parseHash();
             state.view = route.view;
             state.currentDocId = route.docId || null;
@@ -964,7 +1005,7 @@ $baseUrl = Helper::url('');
                 data = rawText ? JSON.parse(rawText) : {};
             } catch (error) {
                 const compactBody = rawText.replace(/\s+/g, ' ').trim();
-                throw new Error(`接口返回了非 JSON 响应（HTTP ${response.status || 0}）：${compactBody.slice(0, 220) || 'empty response'}`);
+                throw new Error(`API returned a non-JSON response (HTTP ${response.status || 0}): ${compactBody.slice(0, 220) || 'empty response'}`);
             }
             if (!response.ok) {
                 throw new Error(data.error || data.detail || 'Request failed');
@@ -992,9 +1033,9 @@ $baseUrl = Helper::url('');
             } catch (error) {
                 const compactBody = rawText.replace(/\s+/g, ' ').trim();
                 if (/sign-?in|Authentication required|Session expired/i.test(compactBody)) {
-                    throw new Error('登录状态已失效，请刷新页面后重新登录。');
+                    throw new Error('Your session has expired. Refresh the page and sign in again.');
                 }
-                throw new Error(`接口返回了非 JSON 响应（HTTP ${response.status || 0}）：${compactBody.slice(0, 220) || 'empty response'}`);
+                throw new Error(`API returned a non-JSON response (HTTP ${response.status || 0}): ${compactBody.slice(0, 220) || 'empty response'}`);
             }
             if (!response.ok) {
                 throw new Error(data.error || data.detail || 'Request failed');
@@ -1014,7 +1055,7 @@ $baseUrl = Helper::url('');
                 data = rawText ? JSON.parse(rawText) : {};
             } catch (error) {
                 const compactBody = rawText.replace(/\s+/g, ' ').trim();
-                throw new Error(`接口返回了非 JSON 响应（HTTP ${response.status || 0}）：${compactBody.slice(0, 220) || 'empty response'}`);
+                throw new Error(`API returned a non-JSON response (HTTP ${response.status || 0}): ${compactBody.slice(0, 220) || 'empty response'}`);
             }
             if (!response.ok) {
                 throw new Error(data.error || data.detail || 'Request failed');
@@ -1060,10 +1101,10 @@ $baseUrl = Helper::url('');
         function updateServiceStatus() {
             const statusClass = !state.serviceOnline ? 'offline' : (state.serviceApiCompatible ? 'online' : 'incompatible');
             const statusText = !state.serviceOnline
-                ? '知识库服务离线'
+                ? 'Knowledge base service offline'
                 : (state.serviceApiCompatible
-                    ? `知识库服务在线${state.serviceVersion ? ` · v${escapeHtml(state.serviceVersion)}` : ''}`
-                    : '知识库服务在线，但仍是旧接口版本');
+                    ? `Knowledge base service online${state.serviceVersion ? ` · v${escapeHtml(state.serviceVersion)}` : ''}`
+                    : 'Knowledge base service online, but still running an older API version');
             serviceStatus.className = `kb-status ${statusClass}`;
             serviceStatus.innerHTML = `
                 <span class="kb-status-dot"></span>
@@ -1090,7 +1131,7 @@ $baseUrl = Helper::url('');
             if (state.serviceOnline && !state.serviceApiCompatible) {
                 const missing = state.serviceMissingEndpoints.slice(0, 4).join(', ');
                 showAlert(
-                    `当前运行中的知识库服务仍是旧接口版本，管理员知识库页需要的新接口尚未全部生效。请重启/部署 services/chroma 当前代码。${missing ? ` 缺失示例：${missing}` : ''}`,
+                    `The running knowledge base service is still using an older API version. Some endpoints required by the admin knowledge page are not available yet. Restart or redeploy the current services/chroma code.${missing ? ` Missing examples: ${missing}` : ''}`,
                     'warning'
                 );
                 return;
@@ -1098,10 +1139,10 @@ $baseUrl = Helper::url('');
 
             if (state.serviceOnline && !state.serviceDbHealthy) {
                 const tableHint = `kb_documents=${state.serviceDbTables?.kb_documents ? 'yes' : 'no'}, kb_chunks=${state.serviceDbTables?.kb_chunks ? 'yes' : 'no'}`;
-                const modeHint = state.serviceDbMode ? ` 连接方式：${state.serviceDbMode}` : '';
-                const socketHint = state.serviceDbSocket ? ` socket：${state.serviceDbSocket}` : '';
+                const modeHint = state.serviceDbMode ? ` Connection mode: ${state.serviceDbMode}` : '';
+                const socketHint = state.serviceDbSocket ? ` Socket: ${state.serviceDbSocket}` : '';
                 showAlert(
-                    `知识库服务已启动，但 MySQL 自检失败。${state.serviceDbError || '请检查 DB_HOST/DB_PORT/DB_USERNAME/DB_PASS/DB_SOCKET。'}${modeHint}${socketHint}；表状态：${tableHint}`,
+                    `The knowledge base service is running, but the MySQL self-check failed. ${state.serviceDbError || 'Check DB_HOST, DB_PORT, DB_USERNAME, DB_PASS, and DB_SOCKET.'}${modeHint}${socketHint}; table status: ${tableHint}`,
                     'error'
                 );
             }
@@ -1109,13 +1150,13 @@ $baseUrl = Helper::url('');
 
         function ensureCompatibleService(featureLabel) {
             if (!state.serviceOnline) {
-                showAlert(`知识库服务离线，无法执行${featureLabel}。`, 'error');
+                showAlert(`The knowledge base service is offline and cannot perform ${featureLabel}.`, 'error');
                 return false;
             }
             if (!state.serviceApiCompatible) {
                 const missing = state.serviceMissingEndpoints.slice(0, 6).join(', ');
                 showAlert(
-                    `当前运行中的知识库服务仍缺少管理员页所需接口，无法执行${featureLabel}。请先重启/部署新版 services/chroma 服务。${missing ? ` 缺失接口：${missing}` : ''}`,
+                    `The running knowledge base service is still missing endpoints required by this admin page, so it cannot perform ${featureLabel}. Restart or redeploy the updated services/chroma service first.${missing ? ` Missing endpoints: ${missing}` : ''}`,
                     'warning'
                 );
                 return false;
@@ -1161,7 +1202,7 @@ $baseUrl = Helper::url('');
                 const job = data.job || {};
                 state.rebuild = {
                     status: job.status || 'idle',
-                    message: job.message || '未开始重建任务。',
+                    message: job.message || 'No rebuild job has started.',
                     startedAt: job.started_at || null,
                     finishedAt: job.finished_at || null,
                     updatedAt: job.updated_at || null,
@@ -1211,19 +1252,19 @@ $baseUrl = Helper::url('');
                 <section class="kb-card">
                     <div class="kb-section-head">
                         <div>
-                            <h2>文档列表</h2>
-                            <div class="kb-muted">一个搜索框统一搜索文档标题、文件名和 chunk 关键词；列表保留年龄段与审核状态两个筛选项。</div>
+                            <h2>Documents</h2>
+                            <div class="kb-muted">One search box covers document titles, filenames, and chunk keywords. Only Age Band and Review Status filters are kept.</div>
                         </div>
                         <div class="kb-actions">
-                            <button class="kb-btn secondary" id="refreshDocsBtn"><i class="fas fa-rotate"></i> 刷新</button>
-                            <button class="kb-btn ghost" id="refreshRebuildStatusBtn"><i class="fas fa-list-check"></i> 刷新重建状态</button>
-                            <button class="kb-btn success" id="rebuildKnowledgeBtn" ${rebuildRunning ? 'disabled' : ''}><i class="fas fa-screwdriver-wrench"></i> 一键重建知识库</button>
-                            <button class="kb-btn primary" id="goUploadBtn"><i class="fas fa-upload"></i> 上传新文档</button>
+                            <button class="kb-btn secondary" id="refreshDocsBtn"><i class="fas fa-rotate"></i> Refresh</button>
+                            <button class="kb-btn ghost" id="refreshRebuildStatusBtn"><i class="fas fa-list-check"></i> Refresh Rebuild Status</button>
+                            <button class="kb-btn success" id="rebuildKnowledgeBtn" ${rebuildRunning ? 'disabled' : ''}><i class="fas fa-screwdriver-wrench"></i> Rebuild Knowledge Base</button>
+                            <button class="kb-btn primary" id="goUploadBtn"><i class="fas fa-upload"></i> Upload New Document</button>
                         </div>
                     </div>
 
                     <div class="kb-filter-grid">
-                        ${renderInputField('doc-search', '统一搜索', '搜索文档标题、文件名或 chunk 关键词', state.docFilters.search)}
+                        ${renderInputField('doc-search', 'Search', 'Search document titles, filenames, or chunk keywords', state.docFilters.search, {clearable: true, clearTitle: 'Clear search'})}
                         ${renderSelectField('doc-age', 'Age Bands', ['', ...AGE_BANDS], state.docFilters.ageBand)}
                         ${renderSelectField('doc-review', 'Review Status', ['', ...REVIEW_STATUSES], state.docFilters.reviewStatus)}
                     </div>
@@ -1234,8 +1275,8 @@ $baseUrl = Helper::url('');
                 <section class="kb-card">
                     <div class="kb-section-head">
                         <div>
-                            <h3>共 ${docs.length} 份文档</h3>
-                            <div class="kb-muted">默认按更新时间倒序排列。needs_review 文档会被明显标识。</div>
+                            <h3>${docs.length} documents</h3>
+                            <div class="kb-muted">Sorted by updated time in descending order by default. Documents with needs_review are highlighted.</div>
                         </div>
                     </div>
 
@@ -1244,22 +1285,22 @@ $baseUrl = Helper::url('');
                         <table class="kb-table">
                             <thead>
                                 <tr>
-                                    <th>文档</th>
-                                    <th>系统字段</th>
-                                    <th>状态</th>
-                                    <th>更新时间</th>
-                                    <th>操作</th>
+                                    <th>Document</th>
+                                    <th>System Fields</th>
+                                    <th>Status</th>
+                                    <th>Updated</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>${rows}</tbody>
                         </table>
-                    </div>` : `<div class="kb-empty">暂无符合条件的文档。</div>`) : `<div class="kb-loading"><i class="fas fa-spinner"></i> 正在加载文档...</div>`}
+                    </div>` : `<div class="kb-empty">No documents match the current filters.</div>`) : `<div class="kb-loading"><i class="fas fa-spinner"></i> Loading documents...</div>`}
                 </section>
             `;
 
             bindDocumentFilters();
             document.getElementById('refreshDocsBtn').addEventListener('click', async () => {
-                appRoot.innerHTML = `<div class="kb-card"><div class="kb-loading"><i class="fas fa-spinner"></i> 正在刷新文档列表...</div></div>`;
+                appRoot.innerHTML = `<div class="kb-card"><div class="kb-loading"><i class="fas fa-spinner"></i> Refreshing document list...</div></div>`;
                 await loadDocuments();
                 renderDocumentsView();
             });
@@ -1270,6 +1311,8 @@ $baseUrl = Helper::url('');
             document.getElementById('rebuildKnowledgeBtn').addEventListener('click', startKnowledgeRebuild);
             document.getElementById('goUploadBtn').addEventListener('click', () => navigate('upload'));
             bindDocRowActions();
+            flushPendingViewAlert();
+            syncRecentUploadPolling();
         }
 
         function renderRebuildJobCard() {
@@ -1277,14 +1320,14 @@ $baseUrl = Helper::url('');
             const status = job.status || 'idle';
             const logOutput = (job.logLines || []).length
                 ? escapeHtml(job.logLines.join('\n'))
-                : '暂无日志输出。';
+                : 'No log output yet.';
 
             return `
                 <section class="kb-card kb-job-card">
                     <div class="kb-section-head">
                         <div>
-                            <h3>知识库重建任务</h3>
-                            <div class="kb-muted">用于新环境恢复 uploads 中已有文件的文档列表、chunk 元数据和向量索引。重建期间不要重复上传同批文件。</div>
+                            <h3>Knowledge Base Rebuild Job</h3>
+                            <div class="kb-muted">Use this to restore document records, chunk metadata, and vector indexes from files already stored in uploads when moving to a new environment. Do not upload the same batch again during rebuild.</div>
                         </div>
                         <div class="kb-actions">
                             ${renderRebuildStatusPill(status)}
@@ -1293,21 +1336,21 @@ $baseUrl = Helper::url('');
                     </div>
 
                     <div class="kb-note">
-                        ${escapeHtml(job.message || '未开始重建任务。')}
-                        ${job.lastFile ? `<div style="margin-top:8px;"><strong>最近处理：</strong>${escapeHtml(job.lastFile)}</div>` : ''}
+                        ${escapeHtml(job.message || 'No rebuild job has started.')}
+                        ${job.lastFile ? `<div style="margin-top:8px;"><strong>Last processed:</strong> ${escapeHtml(job.lastFile)}</div>` : ''}
                         <div style="margin-top:8px;">
-                            开始时间：${escapeHtml(formatDate(job.startedAt))}
-                            · 完成时间：${escapeHtml(formatDate(job.finishedAt))}
-                            · 最后更新：${escapeHtml(formatDate(job.updatedAt))}
+                            Started: ${escapeHtml(formatDate(job.startedAt))}
+                            · Finished: ${escapeHtml(formatDate(job.finishedAt))}
+                            · Updated: ${escapeHtml(formatDate(job.updatedAt))}
                         </div>
                     </div>
 
                     <div class="kb-job-grid">
-                        <div class="kb-job-metric"><span class="kb-muted">扫描文件</span><strong>${escapeHtml(String(job.scanned || 0))}</strong></div>
-                        <div class="kb-job-metric"><span class="kb-muted">新插入</span><strong>${escapeHtml(String(job.inserted || 0))}</strong></div>
-                        <div class="kb-job-metric"><span class="kb-muted">已修复</span><strong>${escapeHtml(String(job.repaired || 0))}</strong></div>
-                        <div class="kb-job-metric"><span class="kb-muted">已跳过</span><strong>${escapeHtml(String(job.skipped || 0))}</strong></div>
-                        <div class="kb-job-metric"><span class="kb-muted">失败数</span><strong>${escapeHtml(String(job.failed || 0))}</strong></div>
+                        <div class="kb-job-metric"><span class="kb-muted">Scanned Files</span><strong>${escapeHtml(String(job.scanned || 0))}</strong></div>
+                        <div class="kb-job-metric"><span class="kb-muted">Inserted</span><strong>${escapeHtml(String(job.inserted || 0))}</strong></div>
+                        <div class="kb-job-metric"><span class="kb-muted">Repaired</span><strong>${escapeHtml(String(job.repaired || 0))}</strong></div>
+                        <div class="kb-job-metric"><span class="kb-muted">Skipped</span><strong>${escapeHtml(String(job.skipped || 0))}</strong></div>
+                        <div class="kb-job-metric"><span class="kb-muted">Failed</span><strong>${escapeHtml(String(job.failed || 0))}</strong></div>
                     </div>
 
                     <div class="kb-log-box">${logOutput}</div>
@@ -1324,6 +1367,8 @@ $baseUrl = Helper::url('');
             const visibilityBadge = renderPill(doc.safety_visibility, 'visibility');
             const ageBands = renderArrayPills(doc.age_bands);
             const topics = renderArrayPills(doc.topics);
+            const recentUploadBadge = renderRecentUploadBadge(doc.id);
+            const recentUploadProgress = renderRecentUploadProgress(doc.id);
 
             return `
                 <tr data-doc-id="${escapeHtml(doc.id)}">
@@ -1333,29 +1378,33 @@ $baseUrl = Helper::url('');
                                 <h4 class="kb-doc-title" style="font-size:16px;">${escapeHtml(doc.title || doc.original_filename)}</h4>
                                 <div class="kb-doc-meta">${escapeHtml(doc.original_filename)} · ${escapeHtml(formatFileSize(doc.file_size))} · ${doc.chunk_count} chunks</div>
                             </div>
-                            ${doc.review_status === 'needs_review' ? '<span class="kb-danger-flag"><i class="fas fa-triangle-exclamation"></i> needs_review</span>' : ''}
+                            <div class="kb-actions" style="gap:8px;">
+                                ${recentUploadBadge}
+                                ${doc.review_status === 'needs_review' ? '<span class="kb-danger-flag"><i class="fas fa-triangle-exclamation"></i> needs_review</span>' : ''}
+                            </div>
                         </div>
                     </td>
                     <td>
                         <div class="kb-pill-row">${renderPill(doc.library)}${renderPill(doc.audience)}${visibilityBadge}</div>
-                        <div class="kb-pill-row" style="margin-top:8px;">${ageBands || '<span class="kb-muted">无年龄段</span>'}</div>
+                        <div class="kb-pill-row" style="margin-top:8px;">${ageBands || '<span class="kb-muted">No age bands</span>'}</div>
                         <div class="kb-doc-meta" style="margin-top:8px;">Source org: ${escapeHtml(doc.source_org || 'Unknown')}</div>
-                        <div class="kb-pill-row" style="margin-top:8px;">${topics || '<span class="kb-muted">无主题</span>'}</div>
+                        <div class="kb-pill-row" style="margin-top:8px;">${topics || '<span class="kb-muted">No topics</span>'}</div>
                     </td>
                     <td>
                         <div class="kb-pill-row">${reviewBadge}${parserBadge}${chunkBadge}${embeddingBadge}${indexingBadge}</div>
-                        ${doc.error_message ? `<div class="kb-doc-meta" style="margin-top:8px; color:#b42318;">失败原因：${escapeHtml(doc.error_message)}</div>` : ''}
+                        ${recentUploadProgress}
+                        ${doc.error_message ? `<div class="kb-doc-meta" style="margin-top:8px; color:#b42318;">Error: ${escapeHtml(doc.error_message)}</div>` : ''}
                     </td>
                     <td>
                         <div>${escapeHtml(formatDate(doc.updated_at || doc.upload_time))}</div>
-                        <div class="kb-doc-meta">Indexed: ${escapeHtml(doc.last_indexed_at ? formatDate(doc.last_indexed_at) : '未索引')}</div>
+                        <div class="kb-doc-meta">Indexed: ${escapeHtml(doc.last_indexed_at ? formatDate(doc.last_indexed_at) : 'Not indexed')}</div>
                     </td>
                     <td>
                         <div class="kb-actions">
-                            <button class="kb-btn secondary" data-doc-action="confirm" data-doc-id="${escapeHtml(doc.id)}"><i class="fas fa-wand-magic-sparkles"></i> 分析结果</button>
-                            <button class="kb-btn ghost" data-doc-action="detail" data-doc-id="${escapeHtml(doc.id)}"><i class="fas fa-file-lines"></i> 详情</button>
-                            <button class="kb-btn ghost" data-doc-action="chunks" data-doc-id="${escapeHtml(doc.id)}"><i class="fas fa-layer-group"></i> Chunk 审查</button>
-                            <button class="kb-btn danger" data-doc-action="delete" data-doc-id="${escapeHtml(doc.id)}" data-doc-title="${escapeHtml(doc.title || doc.original_filename)}"><i class="fas fa-trash"></i> 删除</button>
+                            <button class="kb-btn secondary" data-doc-action="confirm" data-doc-id="${escapeHtml(doc.id)}"><i class="fas fa-wand-magic-sparkles"></i> Review Results</button>
+                            <button class="kb-btn ghost" data-doc-action="detail" data-doc-id="${escapeHtml(doc.id)}"><i class="fas fa-file-lines"></i> Details</button>
+                            <button class="kb-btn ghost" data-doc-action="chunks" data-doc-id="${escapeHtml(doc.id)}"><i class="fas fa-layer-group"></i> Chunk Review</button>
+                            <button class="kb-btn danger" data-doc-action="delete" data-doc-id="${escapeHtml(doc.id)}" data-doc-title="${escapeHtml(doc.title || doc.original_filename)}"><i class="fas fa-trash"></i> Delete</button>
                         </div>
                     </td>
                 </tr>
@@ -1363,21 +1412,47 @@ $baseUrl = Helper::url('');
         }
 
         function bindDocumentFilters() {
+            const applyDocFilters = async () => {
+                state.docsLoaded = false;
+                renderDocumentsView();
+                await loadDocuments();
+                renderDocumentsView();
+            };
+
             const map = [
-                ['doc-search', 'search'],
-                ['doc-age', 'ageBand'],
-                ['doc-review', 'reviewStatus'],
+                {id: 'doc-search', key: 'search', mode: 'enter'},
+                {id: 'doc-age', key: 'ageBand', mode: 'change'},
+                {id: 'doc-review', key: 'reviewStatus', mode: 'change'},
             ];
 
-            map.forEach(([id, key]) => {
+            map.forEach(({id, key, mode}) => {
                 const element = document.getElementById(id);
-                const eventName = element.tagName === 'INPUT' ? 'input' : 'change';
-                element.addEventListener(eventName, async event => {
+                if (!element) return;
+
+                if (mode === 'enter') {
+                    element.addEventListener('keydown', async event => {
+                        if (event.key !== 'Enter') return;
+                        event.preventDefault();
+                        const next = event.target.value.trim();
+                        if (state.docFilters[key] === next) return;
+                        state.docFilters[key] = next;
+                        await applyDocFilters();
+                    });
+
+                    const clearButton = document.querySelector(`[data-clear-input="${id}"]`);
+                    if (clearButton) {
+                        clearButton.addEventListener('click', async () => {
+                            if (!state.docFilters[key]) return;
+                            state.docFilters[key] = '';
+                            await applyDocFilters();
+                        });
+                    }
+                    return;
+                }
+
+                element.addEventListener('change', async event => {
                     state.docFilters[key] = event.target.value;
-                    state.docsLoaded = false;
-                    renderDocumentsView();
-                    await loadDocuments();
-                    renderDocumentsView();
+                    await applyDocFilters();
                 });
             });
         }
@@ -1389,8 +1464,8 @@ $baseUrl = Helper::url('');
                     const action = event.currentTarget.dataset.docAction;
 
                     if (action === 'delete') {
-                        const title = event.currentTarget.dataset.docTitle || '该文档';
-                        if (!confirm(`确认删除“${title}”？此操作会删除文档、chunk 与向量索引。`)) {
+                        const title = event.currentTarget.dataset.docTitle || 'this document';
+                        if (!confirm(`Delete "${title}"? This will remove the document, chunks, and vector index.`)) {
                             return;
                         }
                         try {
@@ -1417,7 +1492,7 @@ $baseUrl = Helper::url('');
             const totalSize = getUploadQueueTotalSize();
             const totalFiles = state.upload.items.length;
             const queueRows = state.upload.items.map(item => renderUploadQueueRow(item)).join('');
-            const uploadLabel = state.upload.submitting ? '上传中...' : '开始上传';
+            const uploadLabel = state.upload.submitting ? 'Uploading...' : 'Start Upload';
             const uploadIcon = state.upload.submitting ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up';
             const overallProgress = Math.max(0, Math.min(100, state.upload.totalProgress || 0));
 
@@ -1425,39 +1500,39 @@ $baseUrl = Helper::url('');
                 <section class="kb-card">
                     <div class="kb-section-head">
                         <div>
-                            <h2>极简上传</h2>
-                            <div class="kb-muted">上传页首屏只保留 file 与 title 两个输入。其余字段由系统自动分析生成。</div>
+                            <h2>Minimal Upload</h2>
+                            <div class="kb-muted">The upload screen keeps only file and title in the first step. All other fields are generated automatically by the system.</div>
                         </div>
                     </div>
 
                     <div class="kb-note">
-                        上传成功后会自动进入系统分析流程：原文件保存、文档解析、文本切片、自动分类、自动生成年龄段/受众/可见性/主题、embedding 建立与索引入库。
+                        After upload succeeds, the document enters the automated analysis pipeline: file storage, document parsing, text chunking, auto-classification, automatic age band/audience/visibility/topic generation, embedding creation, and index storage.
                     </div>
 
                     ${serviceReady ? '' : `
                         <div class="kb-alert warning show" style="margin-top:18px;">
                             <i class="fas fa-circle-info"></i>
-                            <span>当前知识库服务未处于管理员页所需的新版接口状态。上传按钮已禁用，避免只保存文件而不进入完整分析链路。</span>
+                            <span>The current knowledge base service is not running the API version required by this admin page. Upload is disabled to avoid saving files without running the full analysis pipeline.</span>
                         </div>
                     `}
 
                     <div class="kb-form-grid" style="margin-top:18px;">
                         <div class="kb-field">
-                            <label for="uploadFileInput">文件 file</label>
+                            <label for="uploadFileInput">File</label>
                             <input type="file" id="uploadFileInput" accept=".pdf,.txt,.doc,.docx,.md,.html,.htm" multiple ${disabled} ${state.upload.submitting ? 'disabled' : ''}>
-                            <div class="kb-muted">支持 PDF / TXT / DOCX / MD / HTML。单文件最大 ${escapeHtml(state.maxFileSizeFormatted)}，单次批量总大小最大 ${escapeHtml(formatFileSize(MAX_BATCH_UPLOAD_SIZE))}。</div>
+                            <div class="kb-muted">Supported: PDF / TXT / DOCX / MD / HTML. Max size per file: ${escapeHtml(state.maxFileSizeFormatted)}. Max total size per batch: ${escapeHtml(formatFileSize(MAX_BATCH_UPLOAD_SIZE))}.</div>
                         </div>
                     </div>
 
                     <div class="kb-upload-summary">
                         <div>
-                            <strong style="display:block;color:#102a43;">待上传队列</strong>
-                            <div class="kb-doc-meta">${totalFiles} 个文件 · ${escapeHtml(formatFileSize(totalSize))}</div>
-                            <div class="kb-upload-status">${state.upload.submitting ? '上传期间不可重复点击开始上传。' : '每个文件只允许修改 title，待上传文件可点 X 移除。'}</div>
+                            <strong style="display:block;color:#102a43;">Upload Queue</strong>
+                            <div class="kb-doc-meta">${totalFiles} file(s) · ${escapeHtml(formatFileSize(totalSize))}</div>
+                            <div class="kb-upload-status">${state.upload.submitting ? 'Do not click Start Upload again while an upload is in progress.' : 'Only the title can be edited for each file. Click X to remove a queued file.'}</div>
                         </div>
                         <div class="kb-actions">
                             <button class="kb-btn ghost" id="clearUploadQueueBtn" ${state.upload.submitting || !totalFiles ? 'disabled' : ''}>
-                                <i class="fas fa-xmark"></i> 清空队列
+                                <i class="fas fa-xmark"></i> Clear Queue
                             </button>
                             <button class="kb-btn primary" id="submitUploadBtn" ${disabled || !totalFiles || state.upload.submitting ? 'disabled' : ''}>
                                 <i class="fas ${uploadIcon}"></i>
@@ -1469,7 +1544,7 @@ $baseUrl = Helper::url('');
                     ${totalFiles ? `
                         <div class="kb-card" style="margin-top:18px; padding:16px; background:#f8fbff;">
                             <div>
-                                <strong style="display:block;color:#102a43;">总体进度</strong>
+                                <strong style="display:block;color:#102a43;">Overall Progress</strong>
                                 <div class="kb-doc-meta">${overallProgress.toFixed(0)}%</div>
                             </div>
                             <div class="kb-upload-progress ${state.upload.submitting ? '' : (overallProgress === 100 && totalFiles ? 'success' : '')}" style="margin-top:12px;">
@@ -1479,7 +1554,7 @@ $baseUrl = Helper::url('');
                     ` : ''}
 
                     <div class="kb-upload-list">
-                        ${queueRows || '<div class="kb-empty">还没有待上传文件。可一次选择多个文件加入队列。</div>'}
+                        ${queueRows || '<div class="kb-empty">No files are queued yet. You can select multiple files at once.</div>'}
                     </div>
                 </section>
             `;
@@ -1530,16 +1605,16 @@ $baseUrl = Helper::url('');
         }
 
         async function submitUpload() {
-            if (!ensureCompatibleService('上传并自动分析')) {
+            if (!ensureCompatibleService('upload and auto-analyze')) {
                 return;
             }
             if (!state.upload.items.length) {
-                showAlert('请先选择至少一个文件。', 'warning');
+                showAlert('Select at least one file first.', 'warning');
                 return;
             }
 
             if (state.upload.items.some(item => !item.title.trim())) {
-                showAlert('每个待上传文件都需要非空 title。', 'warning');
+                showAlert('Every queued file must have a non-empty title.', 'warning');
                 return;
             }
 
@@ -1571,13 +1646,13 @@ $baseUrl = Helper::url('');
                         if (item.docId) {
                             successfulDocs.push({
                                 id: item.docId,
-                                view: data.duplicate ? 'confirm' : 'process'
+                                duplicate: !!data.duplicate
                             });
                             state.upload.lastUploadedDocId = item.docId;
                         }
                     } catch (error) {
                         item.status = 'error';
-                        item.error = error.message || '上传失败';
+                        item.error = error.message || 'Upload failed';
                     } finally {
                         state.upload.uploadedBytes += item.file.size;
                         state.upload.totalProgress = totalBytes ? Math.min(100, (state.upload.uploadedBytes / totalBytes) * 100) : 100;
@@ -1591,23 +1666,40 @@ $baseUrl = Helper::url('');
 
                 const hasError = state.upload.items.some(item => item.status === 'error');
                 const successCount = state.upload.items.filter(item => item.status === 'success' || item.status === 'duplicate').length;
+                const newlyUploadedDocIds = successfulDocs
+                    .filter(item => !item.duplicate)
+                    .map(item => item.id);
 
-                if (successCount === 1 && !hasError && successfulDocs[0]) {
-                    navigate(successfulDocs[0].view, successfulDocs[0].id);
-                    return;
+                if (newlyUploadedDocIds.length) {
+                    trackRecentUploads(newlyUploadedDocIds);
+                    await refreshRecentUploadStatuses(true);
                 }
 
                 if (successCount) {
-                    if (hasError) {
-                        const firstError = state.upload.items.find(item => item.status === 'error' && item.error)?.error || '';
-                        showAlert(firstError ? `批量上传已完成，但部分文件失败：${firstError}` : '批量上传已完成，部分文件失败，请检查队列状态。', 'warning');
-                    } else {
-                        showAlert('批量上传完成，可在队列中进入各文件的分析流程。', 'warning');
-                    }
-                } else {
-                    const firstError = state.upload.items.find(item => item.status === 'error' && item.error)?.error || '';
-                    showAlert(firstError ? `上传失败：${firstError}` : '上传失败，请检查队列状态。', 'error');
+                    state.upload.items = hasError
+                        ? state.upload.items.filter(item => item.status === 'error')
+                        : [];
+                    state.upload.totalProgress = 0;
+                    state.upload.uploadedBytes = 0;
+                    state.pendingViewAlert = {
+                        type: hasError ? 'warning' : 'success',
+                        message: hasError
+                            ? (() => {
+                                const firstError = state.upload.items.find(item => item.status === 'error' && item.error)?.error || '';
+                                return firstError
+                                    ? `Upload finished, but some files failed: ${firstError}`
+                                    : 'Upload finished, but some files failed. Check the queue if you want to retry them.';
+                            })()
+                            : (newlyUploadedDocIds.length
+                                ? 'Upload finished. The latest document is now being processed in the document list.'
+                                : 'Upload finished. The document list has been refreshed.'),
+                    };
+                    navigate('documents');
+                    return;
                 }
+
+                const firstError = state.upload.items.find(item => item.status === 'error' && item.error)?.error || '';
+                showAlert(firstError ? `Upload failed: ${firstError}` : 'Upload failed. Check the queue status.', 'error');
             } catch (error) {
                 state.upload.submitting = false;
                 showAlert(error.message, 'error');
@@ -1617,33 +1709,33 @@ $baseUrl = Helper::url('');
 
         async function renderProcessView(docId) {
             clearAlert();
-            if (!ensureCompatibleService('上传后的状态查询')) {
-                appRoot.innerHTML = `<section class="kb-card"><div class="kb-empty">当前服务版本不支持新版状态轮询接口。</div></section>`;
+            if (!ensureCompatibleService('status polling after upload')) {
+                appRoot.innerHTML = `<section class="kb-card"><div class="kb-empty">The current service version does not support the new status polling endpoint.</div></section>`;
                 return;
             }
-            appRoot.innerHTML = `<section class="kb-card"><div class="kb-loading"><i class="fas fa-spinner"></i> 正在读取分析状态...</div></section>`;
+            appRoot.innerHTML = `<section class="kb-card"><div class="kb-loading"><i class="fas fa-spinner"></i> Loading analysis status...</div></section>`;
             try {
                 const data = await loadDocumentStatus(docId);
                 appRoot.innerHTML = `
                     <section class="kb-card">
                         <div class="kb-section-head">
                             <div>
-                                <h2>系统分析流程</h2>
-                                <div class="kb-muted">支持轮询，刷新页面后仍可继续查看同一文档的状态。</div>
+                                <h2>Analysis Pipeline</h2>
+                                <div class="kb-muted">This view supports polling. You can refresh the page and keep tracking the same document.</div>
                             </div>
                             <div class="kb-actions">
-                                <button class="kb-btn ghost" id="refreshStatusBtn"><i class="fas fa-rotate"></i> 刷新状态</button>
-                                <button class="kb-btn secondary" id="openDocDetailBtn"><i class="fas fa-file-lines"></i> 文档详情</button>
+                                <button class="kb-btn ghost" id="refreshStatusBtn"><i class="fas fa-rotate"></i> Refresh Status</button>
+                                <button class="kb-btn secondary" id="openDocDetailBtn"><i class="fas fa-file-lines"></i> Document Details</button>
                             </div>
                         </div>
 
                         <div class="kb-summary-grid">
                             <div class="kb-stat">
-                                <span class="kb-muted">标题</span>
+                                <span class="kb-muted">Title</span>
                                 <strong style="font-size:18px;">${escapeHtml(data.file.title || data.file.original_filename)}</strong>
                             </div>
                             <div class="kb-stat">
-                                <span class="kb-muted">审核状态</span>
+                                <span class="kb-muted">Review Status</span>
                                 <strong style="font-size:18px;">${escapeHtml(data.file.review_status)}</strong>
                             </div>
                             <div class="kb-stat">
@@ -1655,13 +1747,13 @@ $baseUrl = Helper::url('');
                                 <strong style="font-size:18px;">${escapeHtml(data.file.embedding_status)} / ${escapeHtml(data.file.indexing_status)}</strong>
                             </div>
                             <div class="kb-stat">
-                                <span class="kb-muted">Chunk 数</span>
+                                <span class="kb-muted">Chunk Count</span>
                                 <strong>${data.file.chunk_count || 0}</strong>
                             </div>
                         </div>
 
                         <div class="kb-summary-grid" style="margin-top:14px;">
-                            ${renderReadOnlyStat('当前阶段', escapeHtml(stageLabelByKey(data.current_stage)))}
+                            ${renderReadOnlyStat('Current Stage', escapeHtml(stageLabelByKey(data.current_stage)))}
                             ${renderReadOnlyStat('review_status', renderPill(data.file.review_status, 'review'))}
                             ${renderReadOnlyStat('parser_status', renderPill(data.file.parser_status, 'status'))}
                             ${renderReadOnlyStat('chunk_status', renderPill(data.file.chunk_status, 'status'))}
@@ -1690,7 +1782,7 @@ $baseUrl = Helper::url('');
                         ${data.failed ? `
                             <div class="kb-alert error show" style="margin-top:18px;">
                                 <i class="fas fa-circle-xmark"></i>
-                                <span>分析失败，请进入文档详情查看失败摘要并决定是否重新分析。</span>
+                                <span>Analysis failed. Open the document details to review the error summary and decide whether to run it again.</span>
                             </div>` : ''}
                     </section>
                 `;
@@ -1705,17 +1797,17 @@ $baseUrl = Helper::url('');
                 }
             } catch (error) {
                 showAlert(error.message, 'error');
-                appRoot.innerHTML = `<section class="kb-card"><div class="kb-empty">无法读取分析状态。</div></section>`;
+                appRoot.innerHTML = `<section class="kb-card"><div class="kb-empty">Unable to load analysis status.</div></section>`;
             }
         }
 
         async function renderDocumentWorkspace(docId, mode) {
             clearAlert();
-            if (!ensureCompatibleService(mode === 'confirm' ? '查看分析结果' : '查看文档详情')) {
-                appRoot.innerHTML = `<section class="kb-card"><div class="kb-empty">当前服务版本不支持新版文档详情接口。</div></section>`;
+            if (!ensureCompatibleService(mode === 'confirm' ? 'viewing review results' : 'viewing document details')) {
+                appRoot.innerHTML = `<section class="kb-card"><div class="kb-empty">The current service version does not support the new document detail endpoint.</div></section>`;
                 return;
             }
-            appRoot.innerHTML = `<section class="kb-card"><div class="kb-loading"><i class="fas fa-spinner"></i> 正在读取文档详情...</div></section>`;
+            appRoot.innerHTML = `<section class="kb-card"><div class="kb-loading"><i class="fas fa-spinner"></i> Loading document details...</div></section>`;
             try {
                 const data = await loadDocument(docId);
                 const file = data.file;
@@ -1726,21 +1818,21 @@ $baseUrl = Helper::url('');
                     <section class="kb-card">
                         <div class="kb-section-head">
                             <div>
-                                <h2>${mode === 'confirm' ? '分析结果确认页' : '文档详情页'}</h2>
-                                <div class="kb-muted">${mode === 'confirm' ? '默认简洁模式，管理员查看系统建议并确认。' : '完整查看原始文件信息、自动字段、状态与运维动作。'}</div>
+                                <h2>${mode === 'confirm' ? 'Review Analysis Results' : 'Document Details'}</h2>
+                                <div class="kb-muted">${mode === 'confirm' ? 'Basic mode by default. Review the system suggestions and confirm them.' : 'View the original file details, generated fields, statuses, and maintenance actions.'}</div>
                             </div>
                             <div class="kb-actions">
                                 <label class="kb-toggle">
                                     <input type="checkbox" id="advancedModeToggle" ${state.advancedMode ? 'checked' : ''}>
-                                    高级模式
+                                    Advanced Mode
                                 </label>
-                                <button class="kb-btn ghost" id="backToDocsBtn"><i class="fas fa-list"></i> 返回列表</button>
-                                <button class="kb-btn secondary" id="openChunksBtn"><i class="fas fa-layer-group"></i> Chunk 审查</button>
+                                <button class="kb-btn ghost" id="backToDocsBtn"><i class="fas fa-list"></i> Back to List</button>
+                                <button class="kb-btn secondary" id="openChunksBtn"><i class="fas fa-layer-group"></i> Chunk Review</button>
                             </div>
                         </div>
 
                         <div class="kb-note">
-                            由系统自动分析生成。文档级 <span class="kb-mono">safety_visibility = mixed</span> 只是分析结果，不代表该文档整体可直接给儿童检索；最终仍以 chunk 的 <span class="kb-mono">visibility + retrieval_enabled + age_bands</span> 为准。
+                            These values are generated automatically by the system. A document-level <span class="kb-mono">safety_visibility = mixed</span> is only an analysis result. It does not mean the whole document is directly retrievable for children. Final retrieval still depends on each chunk's <span class="kb-mono">visibility + retrieval_enabled + age_bands</span>.
                         </div>
 
                         <div class="kb-summary-grid" style="margin-top:18px;">
@@ -1766,7 +1858,7 @@ $baseUrl = Helper::url('');
                             </div>
                             <div class="kb-stat">
                                 <span class="kb-muted">Indexed At</span>
-                                <strong style="font-size:18px;">${escapeHtml(file.last_indexed_at ? formatDate(file.last_indexed_at) : '未完成')}</strong>
+                                <strong style="font-size:18px;">${escapeHtml(file.last_indexed_at ? formatDate(file.last_indexed_at) : 'Pending')}</strong>
                             </div>
                         </div>
                     </section>
@@ -1774,13 +1866,13 @@ $baseUrl = Helper::url('');
                     <section class="kb-card">
                         <div class="kb-section-head">
                             <div>
-                                <h3>简洁模式</h3>
-                                <div class="kb-muted">title 可编辑，其余字段默认展示系统建议。</div>
+                                <h3>Basic Mode</h3>
+                                <div class="kb-muted">The title is editable. Other fields show the system suggestions by default.</div>
                             </div>
                             <div class="kb-actions">
-                                <button class="kb-btn primary" id="saveTitleBtn"><i class="fas fa-floppy-disk"></i> 保存标题</button>
-                                <button class="kb-btn success" id="confirmSuggestionsBtn"><i class="fas fa-check"></i> 一键确认</button>
-                                <button class="kb-btn secondary" id="reanalyzeBtn"><i class="fas fa-wand-magic-sparkles"></i> 重新分析</button>
+                                <button class="kb-btn primary" id="saveTitleBtn"><i class="fas fa-floppy-disk"></i> Save Title</button>
+                                <button class="kb-btn success" id="confirmSuggestionsBtn"><i class="fas fa-check"></i> Accept Suggestions</button>
+                                <button class="kb-btn secondary" id="reanalyzeBtn"><i class="fas fa-wand-magic-sparkles"></i> Reanalyze</button>
                             </div>
                         </div>
 
@@ -1799,27 +1891,27 @@ $baseUrl = Helper::url('');
                             ${renderReadOnlyStat('source_org', documentData.source_org)}
                             ${renderReadOnlyStat('library', documentData.library)}
                             ${renderReadOnlyStat('audience', documentData.audience)}
-                            ${renderReadOnlyStat('age_bands', renderArrayPills(documentData.age_bands) || '无')}
+                            ${renderReadOnlyStat('age_bands', renderArrayPills(documentData.age_bands) || 'None')}
                             ${renderReadOnlyStat('safety_visibility', documentData.safety_visibility)}
-                            ${renderReadOnlyStat('topics', renderArrayPills(documentData.topics) || '无')}
-                            ${renderReadOnlyStat('summary', escapeHtml(documentData.summary || '无摘要'))}
-                            ${renderReadOnlyStat('error_message', escapeHtml(documentData.error_message || '无'))}
+                            ${renderReadOnlyStat('topics', renderArrayPills(documentData.topics) || 'None')}
+                            ${renderReadOnlyStat('summary', escapeHtml(documentData.summary || 'No summary'))}
+                            ${renderReadOnlyStat('error_message', escapeHtml(documentData.error_message || 'None'))}
                         </div>
                     </section>
 
                     <section class="kb-card ${state.advancedMode ? '' : 'kb-disabled'}" id="advancedSection">
                         <div class="kb-section-head">
                             <div>
-                                <h3>高级模式</h3>
-                                <div class="kb-muted">允许修正文档级自动字段，适用于运维和审核场景。</div>
+                                <h3>Advanced Mode</h3>
+                                <div class="kb-muted">Adjust document-level generated fields for maintenance and review workflows.</div>
                             </div>
                             <div class="kb-actions">
                                 <button class="kb-btn primary" id="saveAdvancedDocBtn" ${state.advancedMode ? '' : 'disabled'}>
-                                    <i class="fas fa-pen-to-square"></i> 保存高级修正
+                                    <i class="fas fa-pen-to-square"></i> Save Advanced Changes
                                 </button>
-                                <button class="kb-btn ghost" id="reparseBtn"><i class="fas fa-file-arrow-up"></i> 重新解析</button>
-                                <button class="kb-btn ghost" id="rechunkBtn"><i class="fas fa-scissors"></i> 重新切片</button>
-                                <button class="kb-btn ghost" id="reindexBtn"><i class="fas fa-database"></i> 重建索引</button>
+                                <button class="kb-btn ghost" id="reparseBtn"><i class="fas fa-file-arrow-up"></i> Re-parse</button>
+                                <button class="kb-btn ghost" id="rechunkBtn"><i class="fas fa-scissors"></i> Re-chunk</button>
+                                <button class="kb-btn ghost" id="reindexBtn"><i class="fas fa-database"></i> Rebuild Index</button>
                             </div>
                         </div>
 
@@ -1836,12 +1928,12 @@ $baseUrl = Helper::url('');
                             </div>
                             <div class="kb-field">
                                 <label for="doc-advanced-topics">topics</label>
-                                <input type="text" id="doc-advanced-topics" value="${escapeHtml((documentData.topics || []).join(', '))}" placeholder="逗号分隔" ${state.advancedMode ? '' : 'disabled'}>
+                                <input type="text" id="doc-advanced-topics" value="${escapeHtml((documentData.topics || []).join(', '))}" placeholder="Comma-separated" ${state.advancedMode ? '' : 'disabled'}>
                             </div>
                         </div>
 
                         <div class="kb-field" style="margin-top:16px;">
-                            <label>age_bands（多值）</label>
+                            <label>age_bands (multi-value)</label>
                             <div class="kb-multiselect">${renderAgeBandCheckboxes('doc-advanced-age', documentData.age_bands || [], !state.advancedMode)}</div>
                         </div>
 
@@ -1854,8 +1946,8 @@ $baseUrl = Helper::url('');
                     <section class="kb-card">
                         <div class="kb-section-head">
                             <div>
-                                <h3>状态与文件信息</h3>
-                                <div class="kb-muted">包含原始文件信息、解析状态、系统生成字段与版本信息。</div>
+                                <h3>Status and File Information</h3>
+                                <div class="kb-muted">Includes original file info, processing status, generated fields, and version data.</div>
                             </div>
                         </div>
 
@@ -1869,8 +1961,8 @@ $baseUrl = Helper::url('');
                             ${renderReadOnlyStat('embedding_status', renderPill(documentData.embedding_status, 'status'))}
                             ${renderReadOnlyStat('indexing_status', renderPill(documentData.indexing_status, 'status'))}
                             ${renderReadOnlyStat('review_status', renderPill(documentData.review_status, 'review'))}
-                            ${renderReadOnlyStat('last_indexed_at', escapeHtml(documentData.last_indexed_at ? formatDate(documentData.last_indexed_at) : '未完成'))}
-                            ${renderReadOnlyStat('error_message', escapeHtml(documentData.error_message || '无'))}
+                            ${renderReadOnlyStat('last_indexed_at', escapeHtml(documentData.last_indexed_at ? formatDate(documentData.last_indexed_at) : 'Pending'))}
+                            ${renderReadOnlyStat('error_message', escapeHtml(documentData.error_message || 'None'))}
                             ${renderReadOnlyStat('updated_at', escapeHtml(formatDate(documentData.updated_at)))}
                         </div>
                     </section>
@@ -1885,7 +1977,7 @@ $baseUrl = Helper::url('');
                 document.getElementById('saveTitleBtn').addEventListener('click', async () => {
                     const title = document.getElementById(titleFieldId).value.trim();
                     if (!title) {
-                        showAlert('title 不能为空。', 'warning');
+                        showAlert('The title cannot be empty.', 'warning');
                         return;
                     }
                     await saveDocumentUpdates(docId, {
@@ -1893,17 +1985,17 @@ $baseUrl = Helper::url('');
                     }, () => renderDocumentWorkspace(docId, mode));
                 });
                 document.getElementById('confirmSuggestionsBtn').addEventListener('click', async () => {
-                    if (!confirm('确认将 review_status 标记为 auto_accepted？')) {
+                    if (!confirm('Mark review_status as auto_accepted?')) {
                         return;
                     }
                     await saveDocumentUpdates(docId, {
                         review_status: 'auto_accepted'
                     }, () => renderDocumentWorkspace(docId, mode));
                 });
-                document.getElementById('reanalyzeBtn').addEventListener('click', () => triggerDocumentAction(docId, 'reanalyze', '确认重新分析？这会重新生成系统字段与 chunk 分类。'));
-                document.getElementById('reparseBtn').addEventListener('click', () => triggerDocumentAction(docId, 'reparse', '确认重新解析原文件？'));
-                document.getElementById('rechunkBtn').addEventListener('click', () => triggerDocumentAction(docId, 'rechunk', '确认重新切片？现有 chunk 审查结果可能被覆盖。'));
-                document.getElementById('reindexBtn').addEventListener('click', () => triggerDocumentAction(docId, 'reindex', '确认重建 embedding 与索引？'));
+                document.getElementById('reanalyzeBtn').addEventListener('click', () => triggerDocumentAction(docId, 'reanalyze', 'Reanalyze this document? This will regenerate system fields and chunk classifications.'));
+                document.getElementById('reparseBtn').addEventListener('click', () => triggerDocumentAction(docId, 'reparse', 'Re-parse the original file?'));
+                document.getElementById('rechunkBtn').addEventListener('click', () => triggerDocumentAction(docId, 'rechunk', 'Re-chunk this document? Existing chunk review results may be overwritten.'));
+                document.getElementById('reindexBtn').addEventListener('click', () => triggerDocumentAction(docId, 'reindex', 'Rebuild embeddings and index?'));
                 document.getElementById('saveAdvancedDocBtn').addEventListener('click', async () => {
                     if (!state.advancedMode) {
                         return;
@@ -1929,7 +2021,7 @@ $baseUrl = Helper::url('');
                 });
             } catch (error) {
                 showAlert(error.message, 'error');
-                appRoot.innerHTML = `<section class="kb-card"><div class="kb-empty">无法加载文档详情。</div></section>`;
+                appRoot.innerHTML = `<section class="kb-card"><div class="kb-empty">Unable to load document details.</div></section>`;
             }
         }
 
@@ -1958,11 +2050,11 @@ $baseUrl = Helper::url('');
 
         async function renderChunkReviewView(docId) {
             clearAlert();
-            if (!ensureCompatibleService('查看 Chunk 审查')) {
-                appRoot.innerHTML = `<section class="kb-card"><div class="kb-empty">当前服务版本不支持新版 chunk 审查接口。</div></section>`;
+            if (!ensureCompatibleService('viewing chunk review')) {
+                appRoot.innerHTML = `<section class="kb-card"><div class="kb-empty">The current service version does not support the new chunk review endpoint.</div></section>`;
                 return;
             }
-            appRoot.innerHTML = `<section class="kb-card"><div class="kb-loading"><i class="fas fa-spinner"></i> 正在读取 chunk 列表...</div></section>`;
+            appRoot.innerHTML = `<section class="kb-card"><div class="kb-loading"><i class="fas fa-spinner"></i> Loading chunk list...</div></section>`;
             try {
                 const [docData, chunkData] = await Promise.all([loadDocument(docId), loadChunks(docId)]);
                 const file = docData.file;
@@ -1972,30 +2064,30 @@ $baseUrl = Helper::url('');
                     <section class="kb-card">
                         <div class="kb-section-head">
                             <div>
-                                <h2>Chunk 审查页</h2>
-                                <div class="kb-muted">支持低置信度优先排序、visibility / audience / age_bands / retrieval_enabled 过滤和批量修正。</div>
+                                <h2>Chunk Review</h2>
+                                <div class="kb-muted">Supports low-confidence-first sorting, filtering by visibility / audience / age_bands / retrieval_enabled, and batch updates.</div>
                             </div>
                             <div class="kb-actions">
-                                <button class="kb-btn ghost" id="backToDetailBtn"><i class="fas fa-arrow-left"></i> 返回文档</button>
-                                <button class="kb-btn secondary" id="refreshChunksBtn"><i class="fas fa-rotate"></i> 刷新 chunk</button>
+                                <button class="kb-btn ghost" id="backToDetailBtn"><i class="fas fa-arrow-left"></i> Back to Document</button>
+                                <button class="kb-btn secondary" id="refreshChunksBtn"><i class="fas fa-rotate"></i> Refresh Chunks</button>
                             </div>
                         </div>
 
                         <div class="kb-note">
-                            当前文档：<strong>${escapeHtml(file.title || file.original_filename)}</strong>。文档与 chunk 的 age_bands 都是多值数组，前端不会把它当成单值字段处理。
+                            Current document: <strong>${escapeHtml(file.title || file.original_filename)}</strong>. Both document and chunk age_bands are multi-value arrays, and the UI treats them accordingly.
                         </div>
                     </section>
 
                     <section class="kb-card">
                         <div class="kb-section-head">
                             <div>
-                                <h3>筛选与排序</h3>
-                                <div class="kb-muted">默认按 confidence 升序，方便优先检查低置信度 chunk。</div>
+                                <h3>Filters and Sorting</h3>
+                                <div class="kb-muted">Sorted by confidence ascending by default so low-confidence chunks are reviewed first.</div>
                             </div>
                         </div>
 
                         <div class="kb-filter-grid">
-                            ${renderInputField('chunk-search', '搜索', '搜索 heading / 内容 / 主题', state.chunkFilters.search)}
+                            ${renderInputField('chunk-search', 'Search', 'Search heading / content / topics', state.chunkFilters.search, {clearable: true, clearTitle: 'Clear search'})}
                             ${renderSelectField('chunk-visibility', 'visibility', ['', ...CHUNK_VISIBILITIES], state.chunkFilters.visibility)}
                             ${renderSelectField('chunk-audience', 'audience', ['', ...CHUNK_AUDIENCES], state.chunkFilters.audience)}
                             ${renderSelectField('chunk-age', 'age_bands', ['', ...AGE_BANDS], state.chunkFilters.ageBand)}
@@ -2008,12 +2100,12 @@ $baseUrl = Helper::url('');
                     <section class="kb-card">
                         <div class="kb-section-head">
                             <div>
-                                <h3>批量修正</h3>
-                                <div class="kb-muted">高级模式下建议修正字段：age_bands、audience、visibility、topics、retrieval_enabled。</div>
+                                <h3>Batch Update</h3>
+                                <div class="kb-muted">Recommended fields for advanced review: age_bands, audience, visibility, topics, retrieval_enabled.</div>
                             </div>
                             <div class="kb-actions">
                                 <span class="kb-pill">${state.selectedChunkIds.length} selected</span>
-                                <button class="kb-btn primary" id="applyBatchBtn" ${state.selectedChunkIds.length ? '' : 'disabled'}><i class="fas fa-pen-to-square"></i> 应用到所选 chunk</button>
+                                <button class="kb-btn primary" id="applyBatchBtn" ${state.selectedChunkIds.length ? '' : 'disabled'}><i class="fas fa-pen-to-square"></i> Apply to Selected Chunks</button>
                             </div>
                         </div>
 
@@ -2023,12 +2115,12 @@ $baseUrl = Helper::url('');
                             ${renderSelectField('batch-retrieval-enabled', 'retrieval_enabled', ['', 'true', 'false'], '')}
                             <div class="kb-field">
                                 <label for="batch-topics">topics</label>
-                                <input type="text" id="batch-topics" placeholder="逗号分隔">
+                                <input type="text" id="batch-topics" placeholder="Comma-separated">
                             </div>
                         </div>
 
                         <div class="kb-field" style="margin-top:16px;">
-                            <label>age_bands（多值）</label>
+                            <label>age_bands (multi-value)</label>
                             <div class="kb-multiselect">${renderAgeBandCheckboxes('batch-age', [], false)}</div>
                         </div>
                     </section>
@@ -2036,8 +2128,8 @@ $baseUrl = Helper::url('');
                     <section class="kb-card">
                         <div class="kb-section-head">
                             <div>
-                                <h3>Chunk 列表</h3>
-                                <div class="kb-muted">共 ${chunks.length} 条结果。</div>
+                                <h3>Chunk List</h3>
+                                <div class="kb-muted">${chunks.length} result(s).</div>
                             </div>
                         </div>
 
@@ -2049,17 +2141,17 @@ $baseUrl = Helper::url('');
                                             <th><input type="checkbox" id="toggleAllChunks"></th>
                                             <th>chunk_index</th>
                                             <th>heading_path</th>
-                                            <th>内容预览</th>
-                                            <th>系统字段</th>
+                                            <th>Content Preview</th>
+                                            <th>System Fields</th>
                                             <th>confidence</th>
-                                            <th>操作</th>
+                                            <th>Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         ${chunks.map(chunk => renderChunkRow(chunk)).join('')}
                                     </tbody>
                                 </table>
-                            </div>` : `<div class="kb-empty">当前文档没有 chunk，可能仍在处理中，或解析失败。</div>`}
+                            </div>` : `<div class="kb-empty">This document has no chunks yet. It may still be processing, or parsing may have failed.</div>`}
                     </section>
                 `;
 
@@ -2105,11 +2197,11 @@ $baseUrl = Helper::url('');
 
                 document.getElementById('applyBatchBtn').addEventListener('click', async () => {
                     if (!state.selectedChunkIds.length) {
-                        showAlert('请至少选择一个 chunk。', 'warning');
+                        showAlert('Select at least one chunk.', 'warning');
                         return;
                     }
 
-                    if (!confirm(`确认批量修正 ${state.selectedChunkIds.length} 个 chunk？`)) {
+                    if (!confirm(`Apply updates to ${state.selectedChunkIds.length} chunk(s)?`)) {
                         return;
                     }
 
@@ -2128,7 +2220,7 @@ $baseUrl = Helper::url('');
                     if (ageBands.length) fields.age_bands = ageBands;
 
                     if (!Object.keys(fields).length) {
-                        showAlert('请至少填写一个要修正的字段。', 'warning');
+                        showAlert('Fill in at least one field to update.', 'warning');
                         return;
                     }
 
@@ -2146,7 +2238,7 @@ $baseUrl = Helper::url('');
                 });
             } catch (error) {
                 showAlert(error.message, 'error');
-                appRoot.innerHTML = `<section class="kb-card"><div class="kb-empty">无法加载 chunk 列表。</div></section>`;
+                appRoot.innerHTML = `<section class="kb-card"><div class="kb-empty">Unable to load the chunk list.</div></section>`;
             }
         }
 
@@ -2167,7 +2259,7 @@ $baseUrl = Helper::url('');
                     </td>
                     <td>${Number(chunk.confidence).toFixed(2)}</td>
                     <td>
-                        <button class="kb-btn ghost" data-open-chunk="${escapeHtml(chunk.chunk_id)}"><i class="fas fa-eye"></i> 查看</button>
+                        <button class="kb-btn ghost" data-open-chunk="${escapeHtml(chunk.chunk_id)}"><i class="fas fa-eye"></i> View</button>
                     </td>
                 </tr>
             `;
@@ -2175,19 +2267,41 @@ $baseUrl = Helper::url('');
 
         function bindChunkFilterEvents(docId) {
             const map = [
-                ['chunk-search', 'search'],
-                ['chunk-visibility', 'visibility'],
-                ['chunk-audience', 'audience'],
-                ['chunk-age', 'ageBand'],
-                ['chunk-retrieval', 'retrievalEnabled'],
-                ['chunk-sort-by', 'sortBy'],
-                ['chunk-sort-dir', 'sortDir'],
+                {id: 'chunk-search', key: 'search', mode: 'enter'},
+                {id: 'chunk-visibility', key: 'visibility', mode: 'change'},
+                {id: 'chunk-audience', key: 'audience', mode: 'change'},
+                {id: 'chunk-age', key: 'ageBand', mode: 'change'},
+                {id: 'chunk-retrieval', key: 'retrievalEnabled', mode: 'change'},
+                {id: 'chunk-sort-by', key: 'sortBy', mode: 'change'},
+                {id: 'chunk-sort-dir', key: 'sortDir', mode: 'change'},
             ];
 
-            map.forEach(([id, key]) => {
+            map.forEach(({id, key, mode}) => {
                 const element = document.getElementById(id);
-                const eventName = element.tagName === 'INPUT' ? 'input' : 'change';
-                element.addEventListener(eventName, event => {
+                if (!element) return;
+
+                if (mode === 'enter') {
+                    element.addEventListener('keydown', event => {
+                        if (event.key !== 'Enter') return;
+                        event.preventDefault();
+                        const next = event.target.value.trim();
+                        if (state.chunkFilters[key] === next) return;
+                        state.chunkFilters[key] = next;
+                        renderChunkReviewView(docId);
+                    });
+
+                    const clearButton = document.querySelector(`[data-clear-input="${id}"]`);
+                    if (clearButton) {
+                        clearButton.addEventListener('click', () => {
+                            if (!state.chunkFilters[key]) return;
+                            state.chunkFilters[key] = '';
+                            renderChunkReviewView(docId);
+                        });
+                    }
+                    return;
+                }
+
+                element.addEventListener('change', event => {
                     state.chunkFilters[key] = event.target.value;
                     renderChunkReviewView(docId);
                 });
@@ -2212,7 +2326,7 @@ $baseUrl = Helper::url('');
                 </div>
                 <div class="kb-card" style="margin-top:16px; padding:16px;">
                     <div class="kb-section-head">
-                        <h3 style="margin:0;">完整内容</h3>
+                        <h3 style="margin:0;">Full Content</h3>
                     </div>
                     <div style="white-space:pre-wrap; line-height:1.7; color:#243b53;">${escapeHtml(chunk.content || '')}</div>
                 </div>
@@ -2254,11 +2368,18 @@ $baseUrl = Helper::url('');
             return `<span class="kb-pill ${current.className}">${escapeHtml(current.label)}</span>`;
         }
 
-        function renderInputField(id, label, placeholder, value) {
+        function renderInputField(id, label, placeholder, value, options = {}) {
+            const clearable = !!options.clearable;
+            const hasValue = String(value || '').trim() !== '';
+            const clearTitle = options.clearTitle || 'Clear';
+
             return `
                 <div class="kb-field">
                     <label for="${id}">${label}</label>
-                    <input id="${id}" type="text" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value || '')}">
+                    <div class="kb-input-wrap ${clearable && hasValue ? 'has-value' : ''}">
+                        <input id="${id}" type="text" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value || '')}">
+                        ${clearable ? `<button type="button" class="kb-input-clear" data-clear-input="${escapeHtml(id)}" title="${escapeHtml(clearTitle)}" aria-label="${escapeHtml(clearTitle)}">&times;</button>` : ''}
+                    </div>
                 </div>
             `;
         }
@@ -2270,7 +2391,7 @@ $baseUrl = Helper::url('');
                     <select id="${id}">
                         ${options.map(option => {
                             const optionValue = option === '' ? '' : option;
-                            const optionLabel = option === '' ? '全部' : option;
+                            const optionLabel = option === '' ? 'All' : option;
                             return `<option value="${escapeHtml(String(optionValue))}" ${String(value) === String(optionValue) ? 'selected' : ''}>${escapeHtml(String(optionLabel))}</option>`;
                         }).join('')}
                     </select>
@@ -2329,23 +2450,23 @@ $baseUrl = Helper::url('');
                 const ext = `.${(file.name.split('.').pop() || '').toLowerCase()}`;
                 const allowed = ['.pdf', '.txt', '.doc', '.docx', '.md', '.html', '.htm'];
                 if (!allowed.includes(ext)) {
-                    showAlert(`文件 ${file.name} 类型不受支持。`, 'warning');
+                    showAlert(`File type not supported: ${file.name}.`, 'warning');
                     continue;
                 }
 
                 if (file.size > state.maxFileSize) {
-                    showAlert(`文件 ${file.name} 超过单文件大小限制 ${state.maxFileSizeFormatted}。`, 'warning');
+                    showAlert(`File ${file.name} exceeds the per-file limit of ${state.maxFileSizeFormatted}.`, 'warning');
                     continue;
                 }
 
                 const key = `${file.name}-${file.size}-${file.lastModified}`;
                 if (existingKeys.has(key)) {
-                    showAlert(`文件 ${file.name} 已在待上传队列中。`, 'warning');
+                    showAlert(`File ${file.name} is already in the upload queue.`, 'warning');
                     continue;
                 }
 
                 if (projectedSize + file.size > MAX_BATCH_UPLOAD_SIZE) {
-                    showAlert(`批量上传总大小不能超过 ${formatFileSize(MAX_BATCH_UPLOAD_SIZE)}。`, 'warning');
+                    showAlert(`Total batch upload size cannot exceed ${formatFileSize(MAX_BATCH_UPLOAD_SIZE)}.`, 'warning');
                     continue;
                 }
 
@@ -2368,11 +2489,11 @@ $baseUrl = Helper::url('');
             const done = item.status === 'success' || item.status === 'duplicate';
             const progressClass = item.status === 'error' ? 'error' : (done ? 'success' : '');
             const statusLabelMap = {
-                pending: '待上传',
-                uploading: '上传中',
-                success: '已上传',
-                duplicate: '重复文件',
-                error: '上传失败',
+                pending: 'Pending',
+                uploading: 'Uploading',
+                success: 'Uploaded',
+                duplicate: 'Duplicate',
+                error: 'Upload failed',
             };
             const statusLabel = statusLabelMap[item.status] || item.status;
             const openView = item.status === 'duplicate' ? 'confirm' : 'process';
@@ -2385,14 +2506,14 @@ $baseUrl = Helper::url('');
                             <div class="kb-doc-meta">${escapeHtml(formatFileSize(item.file.size))} · ${escapeHtml(statusLabel)}</div>
                         </div>
                         <div class="kb-actions">
-                            ${item.docId ? `<button class="kb-btn ghost" data-open-upload-doc="${escapeHtml(item.docId)}" data-open-upload-view="${openView}"><i class="fas fa-arrow-right"></i> 查看流程</button>` : ''}
-                            ${!state.upload.submitting && !done ? `<button class="kb-upload-remove" data-remove-upload="${escapeHtml(item.clientId)}" title="移除待上传文件"><i class="fas fa-xmark"></i></button>` : ''}
+                            ${item.docId ? `<button class="kb-btn ghost" data-open-upload-doc="${escapeHtml(item.docId)}" data-open-upload-view="${openView}"><i class="fas fa-arrow-right"></i> Open Flow</button>` : ''}
+                            ${!state.upload.submitting && !done ? `<button class="kb-upload-remove" data-remove-upload="${escapeHtml(item.clientId)}" title="Remove queued file"><i class="fas fa-xmark"></i></button>` : ''}
                         </div>
                     </div>
 
                     <div class="kb-field">
                         <label for="upload-title-${escapeHtml(item.clientId)}">title</label>
-                        <input type="text" id="upload-title-${escapeHtml(item.clientId)}" data-upload-title="${escapeHtml(item.clientId)}" value="${escapeHtml(item.title)}" placeholder="默认取文件名去扩展名" ${state.upload.submitting || done ? 'disabled' : ''}>
+                        <input type="text" id="upload-title-${escapeHtml(item.clientId)}" data-upload-title="${escapeHtml(item.clientId)}" value="${escapeHtml(item.title)}" placeholder="Defaults to filename without extension" ${state.upload.submitting || done ? 'disabled' : ''}>
                     </div>
 
                     <div class="kb-upload-progress ${progressClass}" style="margin-top:12px;">
@@ -2441,10 +2562,10 @@ $baseUrl = Helper::url('');
                     } catch (error) {
                         const compactBody = rawText.replace(/\s+/g, ' ').trim();
                         if (/sign-?in|Authentication required|Session expired/i.test(compactBody)) {
-                            reject(new Error('登录状态已失效，请刷新页面后重新登录。'));
+                            reject(new Error('Your session has expired. Refresh the page and sign in again.'));
                             return;
                         }
-                        reject(new Error(`上传接口返回了非 JSON 响应（HTTP ${xhr.status || 0}）：${compactBody.slice(0, 180) || 'empty response'}`));
+                        reject(new Error(`Upload API returned a non-JSON response (HTTP ${xhr.status || 0}): ${compactBody.slice(0, 180) || 'empty response'}`));
                         return;
                     }
 
@@ -2454,18 +2575,18 @@ $baseUrl = Helper::url('');
                     }
 
                     if (xhr.status === 401) {
-                        reject(new Error('登录状态已失效，请刷新页面后重新登录。'));
+                        reject(new Error('Your session has expired. Refresh the page and sign in again.'));
                         return;
                     }
                     if (xhr.status === 403) {
-                        reject(new Error('上传请求被拒绝（可能是 CSRF token 失效）。请刷新页面后重试。'));
+                        reject(new Error('Upload request was rejected, possibly due to an expired CSRF token. Refresh the page and try again.'));
                         return;
                     }
 
-                    reject(new Error(data.error || data.detail || '上传失败'));
+                    reject(new Error(data.error || data.detail || 'Upload failed'));
                 };
 
-                xhr.onerror = () => reject(new Error('网络错误，上传失败'));
+                xhr.onerror = () => reject(new Error('Network error: upload failed'));
                 xhr.send(formData);
             });
         }
@@ -2501,11 +2622,11 @@ $baseUrl = Helper::url('');
 
         async function startKnowledgeRebuild() {
             if (state.rebuild?.isRunning) {
-                showAlert('已有重建任务在运行中。', 'warning');
+                showAlert('A rebuild job is already running.', 'warning');
                 return;
             }
 
-            if (!confirm('确认启动知识库重建？系统会扫描 storage/knowledge/uploads，补回缺失文档和 chunk，并重建向量索引。重建期间建议不要上传同批文件。')) {
+            if (!confirm('Start a knowledge base rebuild? The system will scan storage/knowledge/uploads, restore missing documents and chunks, and rebuild the vector index. Avoid uploading the same batch during rebuild.')) {
                 return;
             }
 
@@ -2514,7 +2635,7 @@ $baseUrl = Helper::url('');
                 await loadRebuildStatus();
                 syncRebuildPolling();
                 renderDocumentsView();
-                showAlert('知识库重建任务已启动。', 'success');
+                showAlert('Knowledge base rebuild started.', 'success');
             } catch (error) {
                 showAlert(error.message, 'error');
             }
@@ -2522,13 +2643,13 @@ $baseUrl = Helper::url('');
 
         function stageLabelByKey(key) {
             const map = {
-                saved: '原文件已保存',
-                parser: '文档解析中',
-                chunking: '文本切片中',
-                classification: '自动分类中',
-                metadata: '自动生成年龄段/受众/可见性/主题中',
-                embedding: '构建 embedding / 建立索引中',
-                done: '分析完成'
+                saved: 'File saved',
+                parser: 'Parsing document',
+                chunking: 'Chunking text',
+                classification: 'Classifying automatically',
+                metadata: 'Generating age bands / audience / visibility / topics',
+                embedding: 'Building embeddings / indexing',
+                done: 'Analysis completed'
             };
             return map[key] || key;
         }
@@ -2566,6 +2687,132 @@ $baseUrl = Helper::url('');
             }
         }
 
+        function clearRecentUploadPolling() {
+            if (state.recentUploadPollTimer) {
+                clearTimeout(state.recentUploadPollTimer);
+                state.recentUploadPollTimer = null;
+            }
+        }
+
+        function flushPendingViewAlert() {
+            if (!state.pendingViewAlert) {
+                return;
+            }
+            const { message, type } = state.pendingViewAlert;
+            state.pendingViewAlert = null;
+            showAlert(message, type || 'warning');
+        }
+
+        function trackRecentUploads(docIds) {
+            docIds.forEach(docId => {
+                if (!docId) return;
+                if (!state.recentUploadDocIds.includes(docId)) {
+                    state.recentUploadDocIds.unshift(docId);
+                }
+            });
+            state.recentUploadDocIds = state.recentUploadDocIds.slice(0, 10);
+        }
+
+        function mergeRecentUploadStatus(docId, statusPayload) {
+            state.recentUploadStatuses[docId] = statusPayload;
+            const file = statusPayload?.file || null;
+            if (!file) {
+                return;
+            }
+
+            const index = state.docs.findIndex(doc => String(doc.id) === String(docId));
+            if (index >= 0) {
+                state.docs[index] = {
+                    ...state.docs[index],
+                    ...file,
+                };
+            }
+        }
+
+        function isRecentUploadTerminal(docId) {
+            const status = state.recentUploadStatuses[docId];
+            if (!status) {
+                return false;
+            }
+            return !!(status.completed || status.failed);
+        }
+
+        function getRecentUploadStageLabel(docId) {
+            const status = state.recentUploadStatuses[docId];
+            if (!status) {
+                return 'Queued for processing';
+            }
+            if (status.failed) {
+                return 'Analysis failed';
+            }
+            if (status.completed) {
+                return 'Analysis completed';
+            }
+            return stageLabelByKey(status.current_stage || 'saved');
+        }
+
+        function renderRecentUploadBadge(docId) {
+            if (!state.recentUploadDocIds.includes(docId)) {
+                return '';
+            }
+
+            if (isRecentUploadTerminal(docId)) {
+                const failed = !!state.recentUploadStatuses[docId]?.failed;
+                return `<span class="kb-pill ${failed ? 'status-failed' : 'status-completed'}">${failed ? 'Recent upload failed' : 'Recent upload completed'}</span>`;
+            }
+
+            return `<span class="kb-pill status-pending">Recent upload</span>`;
+        }
+
+        function renderRecentUploadProgress(docId) {
+            if (!state.recentUploadDocIds.includes(docId)) {
+                return '';
+            }
+
+            const status = state.recentUploadStatuses[docId];
+            const line = getRecentUploadStageLabel(docId);
+            const color = status?.failed ? '#b42318' : '#486581';
+            return `<div class="kb-doc-meta" style="margin-top:8px; color:${color};">Current step: ${escapeHtml(line)}</div>`;
+        }
+
+        async function refreshRecentUploadStatuses(silent = true) {
+            if (!state.recentUploadDocIds.length) {
+                return;
+            }
+
+            const activeDocIds = [...state.recentUploadDocIds];
+            await Promise.all(activeDocIds.map(async docId => {
+                try {
+                    const data = await loadDocumentStatus(docId);
+                    mergeRecentUploadStatus(docId, data);
+                } catch (error) {
+                    if (!silent) {
+                        showAlert(error.message, 'error');
+                    }
+                }
+            }));
+        }
+
+        function syncRecentUploadPolling() {
+            clearRecentUploadPolling();
+
+            if (state.view !== 'documents' || !state.recentUploadDocIds.length) {
+                return;
+            }
+
+            const pendingDocIds = state.recentUploadDocIds.filter(docId => !isRecentUploadTerminal(docId));
+            if (!pendingDocIds.length) {
+                return;
+            }
+
+            state.recentUploadPollTimer = setTimeout(async () => {
+                await refreshRecentUploadStatuses(true);
+                if (state.view === 'documents') {
+                    renderDocumentsView();
+                }
+            }, 2500);
+        }
+
         function syncRebuildPolling() {
             clearRebuildPolling();
             if (!state.rebuild?.isRunning) {
@@ -2583,9 +2830,9 @@ $baseUrl = Helper::url('');
                         renderDocumentsView();
                     }
                     if (state.rebuild?.status === 'completed') {
-                        showAlert('知识库重建完成，文档列表已刷新。', 'success');
+                        showAlert('Knowledge base rebuild completed. The document list has been refreshed.', 'success');
                     } else if (state.rebuild?.status === 'failed') {
-                        showAlert('知识库重建失败，请查看日志。', 'error');
+                        showAlert('Knowledge base rebuild failed. Check the log output.', 'error');
                     }
                     return;
                 }

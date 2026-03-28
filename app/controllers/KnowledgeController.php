@@ -403,7 +403,7 @@ class KnowledgeController
 
         $payload = [
             'status' => 'idle',
-            'message' => '未开始重建任务。',
+            'message' => 'No rebuild job has started.',
             'started_at' => null,
             'finished_at' => null,
             'updated_at' => null,
@@ -429,7 +429,7 @@ class KnowledgeController
         if (in_array($payload['status'], ['queued', 'running'], true) && !$isRunning) {
             if (empty($payload['finished_at'])) {
                 $payload['status'] = 'failed';
-                $payload['message'] = '重建进程已退出，请检查日志。';
+                $payload['message'] = 'The rebuild process has exited. Check the logs.';
                 $payload['finished_at'] = date('c');
                 if ($this->canWritePath($paths['status'])) {
                     try {
