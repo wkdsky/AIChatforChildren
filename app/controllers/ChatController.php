@@ -73,7 +73,11 @@ class ChatController
                 $childAgeBand
             );
             $this->streamTextResponse(
-                $this->formatKnowledgeSearchResponse($knowledgeCommand['query'], $searchResult, $replyLanguage)
+                $this->formatKnowledgeSearchResponse(
+                    (string)($searchResult['query'] ?? $knowledgeCommand['query']),
+                    $searchResult,
+                    $replyLanguage
+                )
             );
             return;
         }
@@ -175,17 +179,58 @@ class ChatController
         string $sessionType = 'child',
         ?string $ageBand = null
     ): array {
+        $safeLimit = max(1, min($limit, 10));
         $params = [
             'query' => $query,
-            'limit' => max(1, min($limit, 10)),
+            'limit' => $safeLimit,
             'session_type' => $sessionType,
-            'include_filtered' => 'false'
+            'include_filtered' => 'true',
         ];
 
         if ($ageBand) {
             $params['age_band'] = $ageBand;
         }
 
+        $decoded = $this->executeKnowledgeSearch($params);
+        if (!is_array($decoded)) {
+            return [
+                'success' => false,
+                'message' => 'Knowledge base service is temporarily unavailable.',
+                'results' => []
+            ];
+        }
+
+        // Retry with a corrected query for common misspellings.
+        $correctedQuery = $this->normalizeKnowledgeQuery($query);
+        if (empty($decoded['results']) && $correctedQuery !== $query) {
+            $correctedParams = $params;
+            $correctedParams['query'] = $correctedQuery;
+            $corrected = $this->executeKnowledgeSearch($correctedParams);
+            if (is_array($corrected) && !empty($corrected['results'])) {
+                $corrected['query_corrected_from'] = $query;
+                return $corrected;
+            }
+            if (is_array($corrected) && empty($decoded['filtered_out']) && !empty($corrected['filtered_out'])) {
+                $decoded = $corrected;
+            }
+        }
+
+        // Relaxed fallback: keep session/visibility safety filters, but allow closest low-confidence items.
+        if (empty($decoded['results'])) {
+            $fallbackResults = $this->buildRelaxedFallbackResults($decoded, $safeLimit);
+            if (!empty($fallbackResults)) {
+                $decoded['results'] = $fallbackResults;
+                $decoded['reliable'] = false;
+                $decoded['message'] = 'No strict match found. Showing the closest available results.';
+                $decoded['no_result_reason'] = 'closest_match_fallback';
+            }
+        }
+
+        return $decoded;
+    }
+
+    private function executeKnowledgeSearch(array $params): ?array
+    {
         $url = $this->knowledgeServiceUrl . '/api/search?' . http_build_query($params);
         $ch = curl_init($url);
 
@@ -201,23 +246,99 @@ class ChatController
         curl_close($ch);
 
         if ($error || $httpCode !== 200 || !$response) {
-            return [
-                'success' => false,
-                'message' => 'Knowledge base service is temporarily unavailable.',
-                'results' => []
-            ];
+            return null;
         }
 
         $decoded = json_decode($response, true);
         if (!is_array($decoded)) {
-            return [
-                'success' => false,
-                'message' => 'Knowledge base returned an invalid response format.',
-                'results' => []
-            ];
+            return null;
         }
 
         return $decoded;
+    }
+
+    private function normalizeKnowledgeQuery(string $query): string
+    {
+        $fixed = preg_replace('/\bchilden\b/i', 'children', $query);
+        $fixed = preg_replace('/\bchildern\b/i', 'children', $fixed ?? $query);
+        $fixed = preg_replace('/\bteh\b/i', 'the', $fixed ?? $query);
+        return trim((string)($fixed ?? $query));
+    }
+
+    private function buildRelaxedFallbackResults(array $searchResult, int $limit): array
+    {
+        $filtered = is_array($searchResult['filtered_out'] ?? null) ? $searchResult['filtered_out'] : [];
+        if (empty($filtered)) {
+            return [];
+        }
+
+        $blockedReasons = [
+            'document_disabled',
+            'chunk_retrieval_disabled',
+            'visibility_not_child_safe',
+            'visibility_not_parent_allowed',
+            'visibility_not_system_allowed',
+            'age_band_mismatch',
+            'invalid_session_type',
+        ];
+
+        $candidates = [];
+        foreach ($filtered as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $reasons = is_array($item['reasons'] ?? null) ? $item['reasons'] : [];
+            $hasBlockedReason = false;
+            foreach ($reasons as $reason) {
+                if (in_array((string)$reason, $blockedReasons, true)) {
+                    $hasBlockedReason = true;
+                    break;
+                }
+            }
+            if ($hasBlockedReason) {
+                continue;
+            }
+
+            $document = trim((string)($item['document'] ?? ''));
+            if ($document === '') {
+                continue;
+            }
+
+            $score = (float)($item['score'] ?? 0.0);
+            $distance = (float)($item['distance'] ?? 1.5);
+            if ($score < 0.20 && $distance > 0.95) {
+                continue;
+            }
+
+            $metadata = is_array($item['metadata'] ?? null) ? $item['metadata'] : [];
+            $matchSignals = is_array($item['match_signals'] ?? null) ? $item['match_signals'] : [];
+
+            $candidates[] = [
+                'document' => $document,
+                'metadata' => $metadata,
+                'distance' => $distance,
+                'score' => $score,
+                'reliable' => false,
+                'passed_relevance_threshold' => false,
+                'reason' => 'closest semantic match',
+                'match_signals' => $matchSignals,
+            ];
+        }
+
+        if (empty($candidates)) {
+            return [];
+        }
+
+        usort($candidates, static function (array $a, array $b): int {
+            $scoreDiff = (float)$b['score'] <=> (float)$a['score'];
+            if ($scoreDiff !== 0) {
+                return $scoreDiff;
+            }
+            return (float)$a['distance'] <=> (float)$b['distance'];
+        });
+
+        return array_slice($candidates, 0, max(1, min($limit, 10)));
     }
 
     private function formatKnowledgeSearchResponse(string $query, array $searchResult, string $replyLanguage = 'auto'): string
@@ -237,6 +358,22 @@ class ChatController
         }
 
         $lines = [$header];
+        $isReliable = (bool)($searchResult['reliable'] ?? false);
+        if (!$isReliable) {
+            $lines[] = $isChinese
+                ? '注：以下为最接近结果（低置信度），请结合实际判断。'
+                : 'Note: the following are closest matches (low confidence).';
+        }
+
+        if (!empty($searchResult['query_corrected_from'])) {
+            $fromQuery = trim((string)$searchResult['query_corrected_from']);
+            if ($fromQuery !== '') {
+                $lines[] = $isChinese
+                    ? "已按拼写纠正继续检索：{$fromQuery} -> {$query}"
+                    : "Searched with spelling correction: {$fromQuery} -> {$query}";
+            }
+        }
+
         foreach ($results as $index => $item) {
             $rank = $index + 1;
             $metadata = is_array($item['metadata'] ?? null) ? $item['metadata'] : [];

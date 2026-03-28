@@ -502,3 +502,22 @@ ITU《保护在线儿童儿童指南》中文版
 中文 PDF，适合做“儿童上网安全基础知识库”，尤其是安全提醒、陌生人风险、行为规范这类模块。
 UNICEF 中国《数字时代的儿童》
 这份更偏宏观背景，适合做“产品立项/需求分析/风险说明”的参考底稿，不如前两份那么直接面向对话，但对产品定位很有帮助。
+
+#database settings
+
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=starter
+DB_USERNAME=root
+DB_PASS=
+DB_SOCKET=/Applications/XAMPP/xamppfiles/var/mysql/mysql.sock
+
+# LLM API settings
+LLM_API_KEY="sk-cfa070aac29141ac889edf44f8c84b21"
+LLM_API_URL="https://api.deepseek.com/v1/chat/completions"
+
+# ChromaDB Knowledge Base Service settings
+CHROMA_PYTHON_PATH="python3"
+CHROMA_SERVICE_HOST="127.0.0.1"
+CHROMA_SERVICE_PORT="4001"
+CHROMA_MAX_FILE_SIZE="20"

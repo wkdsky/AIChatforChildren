@@ -2808,7 +2808,7 @@ $baseUrl = Helper::url('');
             state.recentUploadPollTimer = setTimeout(async () => {
                 await refreshRecentUploadStatuses(true);
                 if (state.view === 'documents') {
-                    renderDocumentsView();
+                    syncRecentUploadPolling();
                 }
             }, 2500);
         }
@@ -2821,16 +2821,10 @@ $baseUrl = Helper::url('');
 
             state.rebuildPollTimer = setTimeout(async () => {
                 await loadRebuildStatus(true);
-                if (state.view === 'documents') {
-                    renderDocumentsView();
-                }
                 if (!state.rebuild?.isRunning) {
                     await loadDocuments();
-                    if (state.view === 'documents') {
-                        renderDocumentsView();
-                    }
                     if (state.rebuild?.status === 'completed') {
-                        showAlert('Knowledge base rebuild completed. The document list has been refreshed.', 'success');
+                        showAlert('Knowledge base rebuild completed. Data is updated in the background; press Refresh to redraw the list.', 'success');
                     } else if (state.rebuild?.status === 'failed') {
                         showAlert('Knowledge base rebuild failed. Check the log output.', 'error');
                     }
