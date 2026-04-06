@@ -141,6 +141,15 @@ function databaseExists(PDO $pdo, string $databaseName): bool
     return (bool) $stmt->fetchColumn();
 }
 
+function recreateDatabase(PDO $pdo, string $databaseName): void
+{
+    $quotedDatabaseName = quoteIdentifier($databaseName);
+    $pdo->exec("DROP DATABASE IF EXISTS {$quotedDatabaseName}");
+    $pdo->exec(
+        "CREATE DATABASE {$quotedDatabaseName} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+    );
+}
+
 function usersTableExists(PDO $pdo): bool
 {
     $stmt = $pdo->query("SHOW TABLES LIKE 'users'");
@@ -244,7 +253,9 @@ try {
             out('No existing admin account found; a default admin will be created after migration.');
         }
 
-        runMigrations(true);
+        out("Recreating database {$databaseName}...");
+        $databasePdo = null;
+        recreateDatabase($serverPdo, $databaseName);
     }
 
     runMigrations(false);
