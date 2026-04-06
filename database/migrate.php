@@ -14,6 +14,7 @@ usort($files, function ($a, $b) {
         'CreateUsersTable' => 10,
         'AddChildAccountFieldsToUsersTable' => 20,
         'CreateChildDailyUsageTable' => 30,
+        'CreateChildDailyLoginsTable' => 35,
         'CreateConversationsTable' => 40,
         'CreateKnowledgeBaseTables' => 50,
     ];

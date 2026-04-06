@@ -166,5 +166,17 @@ class ChildAccount extends BaseModel
     {
         $stmt = $this->pdo->prepare("UPDATE users SET last_login_at = NOW() WHERE id = ? AND role = 'child'");
         $stmt->execute([$childId]);
+
+        $dailyLoginStmt = $this->pdo->prepare(
+            "INSERT INTO child_daily_logins (child_id, login_date, login_count, first_login_at, last_login_at)
+            VALUES (:child_id, CURDATE(), 1, NOW(), NOW())
+            ON DUPLICATE KEY UPDATE
+                login_count = login_count + 1,
+                last_login_at = NOW(),
+                updated_at = CURRENT_TIMESTAMP"
+        );
+        $dailyLoginStmt->execute([
+            'child_id' => $childId,
+        ]);
     }
 }

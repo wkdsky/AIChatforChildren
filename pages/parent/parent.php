@@ -626,6 +626,296 @@ $csrfToken = Helper::generateCsrfToken();
       margin-bottom: 18px;
     }
 
+    .report-modal-content {
+      max-width: 980px;
+    }
+
+    .report-toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+
+    .report-range-switch,
+    .report-metric-switch {
+      display: inline-flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .report-switch-btn {
+      border: 1px solid #d7dbe8;
+      background: #fff;
+      color: #475569;
+      padding: 9px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .report-switch-btn.active {
+      border-color: #667eea;
+      background: #eef2ff;
+      color: #4338ca;
+    }
+
+    .report-helper-text {
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .report-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .report-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .report-stat-card,
+    .report-panel {
+      border: 1px solid #e5e7eb;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+    }
+
+    .report-stat-card {
+      padding: 16px;
+    }
+
+    .report-stat-label {
+      display: block;
+      color: #64748b;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+
+    .report-stat-value {
+      display: block;
+      color: #0f172a;
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .report-stat-note {
+      color: #64748b;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .report-panel {
+      padding: 18px;
+    }
+
+    .report-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .report-panel-header h3 {
+      margin: 0;
+      color: #0f172a;
+      font-size: 1.1rem;
+    }
+
+    .report-insights {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .report-insight-pill {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      color: #475569;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .report-chart {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(38px, 1fr));
+      gap: 10px;
+      align-items: end;
+      min-height: 260px;
+      padding-top: 10px;
+    }
+
+    .report-bar-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .report-bar-value {
+      color: #0f172a;
+      font-size: 12px;
+      font-weight: 700;
+      min-height: 16px;
+    }
+
+    .report-bar-track {
+      width: 100%;
+      height: 160px;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #eef2ff 0%, #f8fafc 100%);
+      border: 1px solid #e2e8f0;
+      display: flex;
+      align-items: flex-end;
+      padding: 6px;
+    }
+
+    .report-bar-fill {
+      width: 100%;
+      border-radius: 12px;
+      min-height: 6px;
+      background: linear-gradient(180deg, #60a5fa 0%, #2563eb 100%);
+      box-shadow: 0 10px 24px rgba(37, 99, 235, 0.2);
+    }
+
+    .report-bar-fill.metric-logins {
+      background: linear-gradient(180deg, #34d399 0%, #059669 100%);
+      box-shadow: 0 10px 24px rgba(5, 150, 105, 0.18);
+    }
+
+    .report-bar-fill.metric-minutes {
+      background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+      box-shadow: 0 10px 24px rgba(217, 119, 6, 0.18);
+    }
+
+    .report-bar-label {
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .report-content-status {
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      color: #475569;
+      font-size: 14px;
+      line-height: 1.7;
+      margin-bottom: 16px;
+    }
+
+    .report-analysis-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .report-analysis-card {
+      padding: 16px;
+      border-radius: 16px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+    }
+
+    .report-analysis-card.full {
+      grid-column: 1 / -1;
+    }
+
+    .report-analysis-card h4 {
+      margin: 0 0 10px;
+      color: #0f172a;
+      font-size: 1rem;
+    }
+
+    .report-analysis-card p {
+      margin: 0;
+      color: #475569;
+      line-height: 1.7;
+      font-size: 14px;
+    }
+
+    .report-tag-list,
+    .report-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .report-tag {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #4338ca;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .report-list-item {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      color: #475569;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    .report-risk-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .report-risk-badge {
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .report-risk-badge.low {
+      background: #ecfdf5;
+      color: #047857;
+    }
+
+    .report-risk-badge.medium {
+      background: #fff7ed;
+      color: #c2410c;
+    }
+
+    .report-risk-badge.high {
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+
     .btn-danger {
       transition: background-color 0.2s ease;
     }
@@ -659,7 +949,9 @@ $csrfToken = Helper::generateCsrfToken();
       }
 
       .form-grid,
-      .settings-overview {
+      .settings-overview,
+      .report-summary-grid,
+      .report-analysis-grid {
         grid-template-columns: 1fr;
       }
 
@@ -678,6 +970,7 @@ $csrfToken = Helper::generateCsrfToken();
       }
 
       .ghost-btn,
+      .warning-btn,
       .danger-btn,
       .btn-inline {
         width: 100%;
@@ -946,11 +1239,65 @@ $csrfToken = Helper::generateCsrfToken();
     </div>
   </div>
 
+  <div class="modal" id="childReportModal" style="display: none;">
+    <div class="modal-content report-modal-content">
+      <div class="modal-header">
+        <h2 id="childReportTitle">Child Report</h2>
+        <span class="close" onclick="closeChildReportModal()">&times;</span>
+      </div>
+      <div class="modal-body">
+        <div class="report-toolbar">
+          <div class="report-range-switch">
+            <button type="button" class="report-switch-btn" data-report-range="7">7 Days</button>
+            <button type="button" class="report-switch-btn active" data-report-range="14">14 Days</button>
+            <button type="button" class="report-switch-btn" data-report-range="30">30 Days</button>
+          </div>
+          <div class="report-helper-text" id="reportGeneratedHint">Recent behavior and content summaries for the selected child.</div>
+        </div>
+
+        <div id="childReportLoading" class="empty-state" style="display: none;">
+          <i class="fas fa-chart-column"></i>
+          <div>Loading report...</div>
+        </div>
+
+        <div id="childReportContent" class="report-layout" style="display: none;">
+          <div id="childReportSummary" class="report-summary-grid"></div>
+
+          <section class="report-panel">
+            <div class="report-panel-header">
+              <h3>Recent Activity</h3>
+              <div class="report-metric-switch">
+                <button type="button" class="report-switch-btn active" data-report-metric="child_message_count">Messages</button>
+                <button type="button" class="report-switch-btn" data-report-metric="login_count">Logins</button>
+                <button type="button" class="report-switch-btn" data-report-metric="used_minutes">Minutes</button>
+              </div>
+            </div>
+            <div id="childReportInsights" class="report-insights"></div>
+            <div id="childReportChart" class="report-chart"></div>
+          </section>
+
+          <section class="report-panel">
+            <div class="report-panel-header">
+              <h3>Chat Content Analysis</h3>
+              <button type="button" class="btn btn-inline btn-secondary" id="generateContentReportBtn" onclick="generateContentReport()">
+                Generate Analysis
+              </button>
+            </div>
+            <div id="childReportSampleStatus" class="report-content-status"></div>
+            <div id="childReportAnalysis"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     const CHILDREN_API_URL = '<?= Helper::url('api/parent/children') ?>';
     const UPDATE_CHILD_API_URL = '<?= Helper::url('api/parent/children/update') ?>';
     const DELETE_CHILD_API_URL = '<?= Helper::url('api/parent/children/delete') ?>';
     const TOGGLE_CHILD_LOGIN_API_URL = '<?= Helper::url('api/parent/children/toggle-login') ?>';
+    const CHILD_REPORT_API_URL = '<?= Helper::url('api/parent/children/report') ?>';
+    const CHILD_REPORT_CONTENT_API_URL = '<?= Helper::url('api/parent/children/report/content') ?>';
     const UPDATE_PROFILE_URL = '<?= Helper::url('update-profile') ?>';
     const VALIDATION_API_URL = '<?= Helper::url('api/validation/account-availability') ?>';
     const CSRF_TOKEN = '<?= htmlspecialchars($csrfToken, ENT_QUOTES) ?>';
@@ -959,6 +1306,13 @@ $csrfToken = Helper::generateCsrfToken();
     let childrenState = [];
     let childNameCheckTimer = null;
     let childNameCheckController = null;
+    let reportState = {
+      childId: null,
+      days: 14,
+      metric: 'child_message_count',
+      overview: null,
+      contentCache: {}
+    };
     const TIME_MINUTE_OPTIONS = ['00', '10', '20', '30', '40', '50'];
 
     function toggleDropdown() {
@@ -1003,6 +1357,26 @@ $csrfToken = Helper::generateCsrfToken();
     function closeManageChildModal() {
       document.getElementById('manageChildModal').style.display = 'none';
       clearChildErrors('manage');
+    }
+
+    function showChildReportModal(childId) {
+      const child = getChildById(childId);
+      if (!child) {
+        return;
+      }
+
+      reportState.childId = childId;
+      reportState.overview = null;
+      document.getElementById('childReportTitle').textContent = `${child.name}'s Report`;
+      document.getElementById('childReportModal').style.display = 'block';
+      document.getElementById('childReportContent').style.display = 'none';
+      document.getElementById('childReportLoading').style.display = 'block';
+      document.getElementById('childReportAnalysis').innerHTML = '';
+      loadChildReportOverview();
+    }
+
+    function closeChildReportModal() {
+      document.getElementById('childReportModal').style.display = 'none';
     }
 
     function buildTimeOptions(selectId, values) {
@@ -1058,6 +1432,23 @@ $csrfToken = Helper::generateCsrfToken();
 
     function getLoginStatusChipClass(loginDisabled) {
       return loginDisabled ? 'status-chip-paused' : 'status-chip-active';
+    }
+
+    function formatNumber(value) {
+      return new Intl.NumberFormat().format(Number(value || 0));
+    }
+
+    function formatReportDate(value) {
+      if (!value) {
+        return 'Not available';
+      }
+
+      const date = new Date(value.replace(' ', 'T'));
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+
+      return date.toLocaleString();
     }
 
     function populateManageChildModal(child) {
@@ -1216,6 +1607,298 @@ $csrfToken = Helper::generateCsrfToken();
       return date.toLocaleString();
     }
 
+    function renderReportSummary(report) {
+      const summary = report.summary;
+      document.getElementById('childReportSummary').innerHTML = [
+        {
+          label: 'Active Days',
+          value: summary.active_days,
+          note: `In the last ${report.days} days`
+        },
+        {
+          label: 'Logins',
+          value: summary.total_logins,
+          note: 'Tracked after each sign-in'
+        },
+        {
+          label: 'Messages',
+          value: summary.total_child_messages,
+          note: `${summary.total_assistant_messages} assistant replies`
+        },
+        {
+          label: 'Conversations',
+          value: summary.total_conversations,
+          note: 'New chats started'
+        },
+        {
+          label: 'Online Minutes',
+          value: summary.total_minutes,
+          note: `Avg ${summary.average_minutes_per_active_day} min on active days`
+        }
+      ].map(item => `
+        <article class="report-stat-card">
+          <span class="report-stat-label">${item.label}</span>
+          <span class="report-stat-value">${formatNumber(item.value)}</span>
+          <span class="report-stat-note">${escapeHtml(item.note)}</span>
+        </article>
+      `).join('');
+    }
+
+    function renderReportInsights(report) {
+      const insights = Array.isArray(report.insights) ? report.insights : [];
+      const lastLogin = report.summary && report.summary.last_login_at
+        ? `Last login: ${formatReportDate(report.summary.last_login_at)}`
+        : 'Last login: Never';
+
+      document.getElementById('childReportInsights').innerHTML = [lastLogin, ...insights]
+        .map(item => `<div class="report-insight-pill">${escapeHtml(item)}</div>`)
+        .join('');
+    }
+
+    function getMetricLabel(metric) {
+      switch (metric) {
+        case 'login_count':
+          return 'Logins';
+        case 'used_minutes':
+          return 'Minutes';
+        default:
+          return 'Messages';
+      }
+    }
+
+    function getMetricClass(metric) {
+      switch (metric) {
+        case 'login_count':
+          return 'metric-logins';
+        case 'used_minutes':
+          return 'metric-minutes';
+        default:
+          return 'metric-messages';
+      }
+    }
+
+    function renderReportChart() {
+      if (!reportState.overview) {
+        return;
+      }
+
+      const series = Array.isArray(reportState.overview.series) ? reportState.overview.series : [];
+      const metric = reportState.metric;
+      const values = series.map(day => Number(day[metric] || 0));
+      const maxValue = Math.max(...values, 1);
+
+      document.getElementById('childReportChart').innerHTML = series.map(day => {
+        const value = Number(day[metric] || 0);
+        const height = Math.max(6, Math.round((value / maxValue) * 100));
+        return `
+          <div class="report-bar-col" title="${escapeHtml(day.date)} · ${escapeHtml(getMetricLabel(metric))}: ${value}">
+            <span class="report-bar-value">${formatNumber(value)}</span>
+            <div class="report-bar-track">
+              <div class="report-bar-fill ${getMetricClass(metric)}" style="height: ${height}%"></div>
+            </div>
+            <span class="report-bar-label">${escapeHtml(day.label)}</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderContentReadiness(readiness) {
+      if (!readiness) {
+        return;
+      }
+
+      document.getElementById('childReportSampleStatus').innerHTML = `
+        <strong>${readiness.eligible ? 'Ready for analysis' : 'More chat data needed'}</strong><br>
+        ${escapeHtml(readiness.reason)}<br>
+        Current sample: ${formatNumber(readiness.message_count)} child messages, ${formatNumber(readiness.character_count)} characters, ${formatNumber(readiness.active_days)} active day(s).
+      `;
+
+      document.getElementById('generateContentReportBtn').disabled = !readiness.eligible;
+    }
+
+    function riskClassFromAnalysis(analysis) {
+      const levels = (analysis.alerts || []).map(item => item.level);
+      if (levels.includes('high')) {
+        return 'high';
+      }
+      if (levels.includes('medium')) {
+        return 'medium';
+      }
+      return 'low';
+    }
+
+    function renderAnalysisList(items) {
+      if (!Array.isArray(items) || items.length === 0) {
+        return '<div class="report-list-item">No recent items detected.</div>';
+      }
+
+      return items.map(item => {
+        const text = typeof item === 'string'
+          ? item
+          : (item.summary || item.why_it_matters || item.detail || item.title || JSON.stringify(item));
+        const label = typeof item === 'string' ? '' : (item.name ? `<strong>${escapeHtml(item.name)}:</strong> ` : '');
+        return `<div class="report-list-item">${label}${escapeHtml(text)}</div>`;
+      }).join('');
+    }
+
+    function renderContentAnalysis(analysis, readiness) {
+      const riskClass = riskClassFromAnalysis(analysis);
+      const interests = Array.isArray(analysis.interests) ? analysis.interests : [];
+      const topics = Array.isArray(analysis.topics) ? analysis.topics : [];
+      const emotional = analysis.emotional_overview || {};
+      const wellbeing = analysis.wellbeing || {};
+      const guidance = Array.isArray(analysis.parent_guidance) ? analysis.parent_guidance : [];
+      const alerts = Array.isArray(analysis.alerts) ? analysis.alerts : [];
+
+      document.getElementById('childReportAnalysis').innerHTML = `
+        <div class="report-analysis-grid">
+          <article class="report-analysis-card full">
+            <div class="report-risk-row">
+              <span class="report-risk-badge ${riskClass}">${escapeHtml(riskClass)} risk</span>
+              <span class="report-helper-text">${escapeHtml(analysis.sample_confidence || readiness.confidence || 'low')} confidence sample</span>
+              <span class="report-helper-text">${escapeHtml(analysis.source === 'llm' ? 'Expanded analysis' : 'Rule-based analysis')}</span>
+            </div>
+            <h4>${escapeHtml(analysis.headline || 'Recent content summary')}</h4>
+            <p>${escapeHtml(analysis.disclaimer || 'This report is a supportive summary of recent chat patterns, not a diagnosis.')}</p>
+          </article>
+
+          <article class="report-analysis-card">
+            <h4>Topic Overview</h4>
+            <p>${escapeHtml(analysis.topic_overview || 'No topic overview available.')}</p>
+          </article>
+
+          <article class="report-analysis-card">
+            <h4>Emotional Snapshot</h4>
+            <p>${escapeHtml(emotional.summary || 'No emotional summary available.')}</p>
+          </article>
+
+          <article class="report-analysis-card">
+            <h4>Recent Topics</h4>
+            <div class="report-tag-list">
+              ${topics.length > 0 ? topics.map(item => `<span class="report-tag">${escapeHtml(item.name || 'Topic')}</span>`).join('') : '<span class="report-helper-text">No clear repeated topics yet.</span>'}
+            </div>
+          </article>
+
+          <article class="report-analysis-card">
+            <h4>Interests</h4>
+            <div class="report-tag-list">
+              ${interests.length > 0 ? interests.map(item => `<span class="report-tag">${escapeHtml(item.name || 'Interest')}</span>`).join('') : '<span class="report-helper-text">No stable interests extracted.</span>'}
+            </div>
+          </article>
+
+          <article class="report-analysis-card">
+            <h4>Wellbeing Signals</h4>
+            <p>${escapeHtml(wellbeing.summary || 'No wellbeing summary available.')}</p>
+          </article>
+
+          <article class="report-analysis-card">
+            <h4>Strengths / Positives</h4>
+            ${renderAnalysisList(Array.isArray(wellbeing.strengths) ? wellbeing.strengths : [])}
+          </article>
+
+          <article class="report-analysis-card">
+            <h4>Watch Points</h4>
+            ${renderAnalysisList(Array.isArray(wellbeing.watch_points) ? wellbeing.watch_points : [])}
+          </article>
+
+          <article class="report-analysis-card full">
+            <h4>Parent Guidance</h4>
+            ${renderAnalysisList(guidance)}
+          </article>
+
+          <article class="report-analysis-card full">
+            <h4>Alerts</h4>
+            ${alerts.length > 0 ? renderAnalysisList(alerts.map(item => `${(item.level || 'low').toUpperCase()}: ${item.title || 'Alert'} - ${item.detail || ''}`)) : '<div class="report-list-item">No urgent language alerts were found in the recent sample.</div>'}
+          </article>
+        </div>
+      `;
+    }
+
+    async function loadChildReportOverview() {
+      if (!reportState.childId) {
+        return;
+      }
+
+      document.getElementById('childReportLoading').style.display = 'block';
+      document.getElementById('childReportContent').style.display = 'none';
+
+      try {
+        const response = await fetch(`${CHILD_REPORT_API_URL}?child_id=${encodeURIComponent(reportState.childId)}&days=${encodeURIComponent(reportState.days)}`, {
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || result.message || 'Failed to load report');
+        }
+
+        reportState.overview = result.report;
+        document.getElementById('childReportLoading').style.display = 'none';
+        document.getElementById('childReportContent').style.display = 'flex';
+        document.getElementById('reportGeneratedHint').textContent = `Showing the most recent ${reportState.days} days of login, chat, and usage activity.`;
+        renderReportSummary(result.report);
+        renderReportInsights(result.report);
+        renderReportChart();
+        renderContentReadiness(result.report.content_readiness);
+
+        const cacheKey = `${reportState.childId}:${reportState.days}`;
+        if (reportState.contentCache[cacheKey]) {
+          renderContentAnalysis(reportState.contentCache[cacheKey], result.report.content_readiness);
+        } else {
+          document.getElementById('childReportAnalysis').innerHTML = `
+            <div class="report-analysis-card full">
+              <h4>Content Analysis</h4>
+              <p>Generate a content report to see recent topics, interests, emotional patterns, and parent guidance based on the selected date range.</p>
+            </div>
+          `;
+        }
+      } catch (error) {
+        console.error(error);
+        document.getElementById('childReportLoading').style.display = 'none';
+        document.getElementById('childReportContent').style.display = 'none';
+        showPageAlert(error.message || 'Failed to load child report.', 'error');
+      }
+    }
+
+    async function generateContentReport() {
+      if (!reportState.childId || !reportState.overview || !reportState.overview.content_readiness || !reportState.overview.content_readiness.eligible) {
+        return;
+      }
+
+      const button = document.getElementById('generateContentReportBtn');
+      button.disabled = true;
+      button.textContent = 'Generating...';
+
+      const formData = new FormData();
+      formData.append('csrf_token', CSRF_TOKEN);
+      formData.append('child_id', reportState.childId);
+      formData.append('days', reportState.days);
+
+      try {
+        const response = await fetch(CHILD_REPORT_CONTENT_API_URL, {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || result.message || 'Failed to generate content analysis');
+        }
+
+        const cacheKey = `${reportState.childId}:${reportState.days}`;
+        reportState.contentCache[cacheKey] = result.analysis;
+        renderContentAnalysis(result.analysis, result.content_readiness);
+      } catch (error) {
+        console.error(error);
+        showPageAlert(error.message || 'Failed to generate content analysis.', 'error');
+      } finally {
+        button.disabled = !(reportState.overview && reportState.overview.content_readiness && reportState.overview.content_readiness.eligible);
+        button.textContent = 'Generate Analysis';
+      }
+    }
+
     function renderChildren(children) {
       childrenState = Array.isArray(children) ? children : [];
       document.getElementById('childrenCount').textContent = childrenState.length;
@@ -1252,6 +1935,7 @@ $csrfToken = Helper::generateCsrfToken();
           </div>
 
           <div class="card-actions">
+            <button type="button" class="ghost-btn" onclick="showChildReportModal(${child.id})">Report</button>
             <button type="button" class="${child.login_disabled ? 'ghost-btn' : 'warning-btn'}" onclick="toggleChildLogin(${child.id})">
               ${child.login_disabled ? 'Allow Login' : 'Block Login'}
             </button>
@@ -1518,6 +2202,32 @@ $csrfToken = Helper::generateCsrfToken();
       }
     });
 
+    document.querySelectorAll('[data-report-range]').forEach(button => {
+      button.addEventListener('click', () => {
+        const nextDays = Number(button.dataset.reportRange);
+        if (!nextDays || reportState.days === nextDays) {
+          return;
+        }
+
+        reportState.days = nextDays;
+        document.querySelectorAll('[data-report-range]').forEach(item => item.classList.toggle('active', item === button));
+        loadChildReportOverview();
+      });
+    });
+
+    document.querySelectorAll('[data-report-metric]').forEach(button => {
+      button.addEventListener('click', () => {
+        const nextMetric = button.dataset.reportMetric;
+        if (!nextMetric || reportState.metric === nextMetric) {
+          return;
+        }
+
+        reportState.metric = nextMetric;
+        document.querySelectorAll('[data-report-metric]').forEach(item => item.classList.toggle('active', item === button));
+        renderReportChart();
+      });
+    });
+
     const childNameInput = document.getElementById('child_name');
     if (childNameInput) {
       childNameInput.addEventListener('input', () => {
@@ -1575,6 +2285,10 @@ $csrfToken = Helper::generateCsrfToken();
 
       if (event.target === document.getElementById('manageChildModal')) {
         closeManageChildModal();
+      }
+
+      if (event.target === document.getElementById('childReportModal')) {
+        closeChildReportModal();
       }
 
       if (!event.target.matches('.user-info') && !event.target.closest('.user-info')) {

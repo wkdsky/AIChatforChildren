@@ -11,6 +11,7 @@ use App\Controllers\KnowledgeController;
 use App\Controllers\ConversationController;
 use App\Controllers\ChatController;
 use App\Controllers\ParentChildController;
+use App\Controllers\ParentChildReportController;
 use App\Controllers\ChildSessionController;
 use App\Controllers\ValidationController;
 use Utils\Helper;
@@ -337,6 +338,20 @@ class AppRouter
             Middleware::requireParent();
             $controller = new ParentChildController();
             $controller->toggleLogin();
+        });
+
+        $router->get('/api/parent/children/report', function () {
+            Middleware::requireAuth();
+            Middleware::requireParent();
+            $controller = new ParentChildReportController();
+            $controller->overview();
+        });
+
+        $router->post('/api/parent/children/report/content', function () {
+            Middleware::requireAuth();
+            Middleware::requireParent();
+            $controller = new ParentChildReportController();
+            $controller->content();
         });
 
         $router->get('/api/child/session-status', function () {
