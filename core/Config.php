@@ -30,6 +30,11 @@ class Config
         self::loadConfig();
         self::loadEnv();
 
+        $envValue = getenv($key);
+        if ($envValue !== false) {
+            return $envValue;
+        }
+
         // Check .env first
         if (isset($_ENV[$key])) {
             return $_ENV[$key];
