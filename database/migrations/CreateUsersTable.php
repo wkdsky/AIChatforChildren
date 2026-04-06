@@ -14,11 +14,20 @@ class CreateUsersTable extends Migration
             email VARCHAR(100) UNIQUE NOT NULL,
             password VARCHAR(255) NOT NULL,
             role ENUM('child', 'parent', 'admin') DEFAULT 'child' NOT NULL,
+            parent_id INT NULL,
             verification_code INT NULL,
             verification_status ENUM('pending', 'verified') DEFAULT 'pending',
+            gender ENUM('male', 'female', 'other') NULL,
+            birth_date DATE NULL,
+            allowed_login_start TIME NOT NULL DEFAULT '00:00:00',
+            allowed_login_end TIME NOT NULL DEFAULT '23:50:00',
+            daily_login_minutes INT NOT NULL DEFAULT 120,
+            login_disabled TINYINT(1) NOT NULL DEFAULT 0,
+            last_login_at DATETIME NULL,
             verification_requested_at TIMESTAMP NULL,
             request_attempts INT DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_users_parent_id (parent_id)
         )";
         $this->pdo->exec($sql);
         echo " Users table created successfully.\n";

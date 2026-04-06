@@ -73,6 +73,20 @@ class Helper
         }
     }
 
+    public static function firstError($field): string
+    {
+        if (empty($_SESSION['errors'][$field])) {
+            return '';
+        }
+
+        $error = $_SESSION['errors'][$field];
+        if (is_array($error)) {
+            return (string) ($error[0] ?? '');
+        }
+
+        return (string) $error;
+    }
+
 
     /**
      * Retrieve the old input value from the session or return a default placeholder.

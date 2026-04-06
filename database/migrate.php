@@ -9,6 +9,28 @@ $files = glob(__DIR__ . "/migrations/*.php");
 
 $rollback = in_array('--down', $argv);
 
+usort($files, function ($a, $b) {
+    $priorityMap = [
+        'CreateUsersTable' => 10,
+        'AddChildAccountFieldsToUsersTable' => 20,
+        'CreateChildDailyUsageTable' => 30,
+        'CreateConversationsTable' => 40,
+        'CreateKnowledgeBaseTables' => 50,
+    ];
+
+    $aName = pathinfo($a, PATHINFO_FILENAME);
+    $bName = pathinfo($b, PATHINFO_FILENAME);
+
+    $aPriority = $priorityMap[$aName] ?? 100;
+    $bPriority = $priorityMap[$bName] ?? 100;
+
+    if ($aPriority === $bPriority) {
+        return strcmp($aName, $bName);
+    }
+
+    return $aPriority <=> $bPriority;
+});
+
 if ($rollback) {
     $files = array_reverse($files);
 }

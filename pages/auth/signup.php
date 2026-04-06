@@ -24,57 +24,30 @@ $csrfToken = Helper::generateCsrfToken();
         </div>
         <div class="right">
             <h2>Sign Up</h2>
-
-            <!-- Display general error messages -->
-            <?php if (isset($_SESSION['errors'])): ?>
-                <div class="error-messages">
-                    <?php Helper::showError("general") ?>
-                </div>
-            <?php endif; ?>
+            <p class="signup-notice">Hello, new parent.</p>
 
             <form action="<?php echo Helper::url('sign-up'); ?>" method="POST">
                 <!-- CSRF Token for security -->
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
 
-                <!-- Full Name Input -->
-                <div class="input-group">
-                    <input type="text" name="full_name" <?= Helper::oldValue("full_name", "Full name") ?> required>
-                    <?php Helper::showError("full_name") ?>
-                </div>
-
                 <!-- Email Input -->
                 <div class="input-group">
-                    <input type="email" name="email" <?= Helper::oldValue("email", "Email") ?> required>
-                    <?php Helper::showError("email") ?>
+                    <input type="email" name="email" id="signup-email" <?= Helper::oldValue("email", "Email") ?> required>
+                    <small class="field-feedback <?= Helper::firstError('email') !== '' ? 'error' : '' ?>" id="signup-email-feedback"><?= htmlspecialchars(Helper::firstError('email')) ?></small>
                 </div>
 
                 <!-- Password Input -->
                 <div class="input-group">
-                    <input type="password" name="password" placeholder="Password" required>
+                    <input type="password" name="password" id="signup-password" placeholder="Password" required>
                     <i class="fa fa-eye toggle-password"></i>
-                    <?php Helper::showError("password") ?>
+                    <small class="field-feedback <?= Helper::firstError('password') !== '' ? 'error' : '' ?>" id="signup-password-feedback"><?= htmlspecialchars(Helper::firstError('password')) ?></small>
                 </div>
 
                 <!-- Confirm Password Input -->
                 <div class="input-group">
-                    <input type="password" name="confirm_password" placeholder="Confirm password" required>
+                    <input type="password" name="confirm_password" id="signup-confirm-password" placeholder="Confirm password" required>
                     <i class="fa fa-eye toggle-password"></i>
-                    <?php Helper::showError("confirm_password") ?>
-                </div>
-
-                <!-- Role Selection Dropdown -->
-                <div class="input-group">
-                    <select name="role" class="role-select" required>
-                        <option value="" disabled <?= !Helper::oldValue("role") ? 'selected' : '' ?>>Select your role</option>
-                        <option value="child" <?= Helper::oldValue("role") && $_SESSION['old']['role'] === 'child' ? 'selected' : '' ?>>
-                            Child
-                        </option>
-                        <option value="parent" <?= Helper::oldValue("role") && $_SESSION['old']['role'] === 'parent' ? 'selected' : '' ?>>
-                            Parent
-                        </option>
-                    </select>
-                    <i class="fa fa-user-tag select-icon"></i>
-                    <?php Helper::showError("role") ?>
+                    <small class="field-feedback <?= Helper::firstError('confirm_password') !== '' ? 'error' : '' ?>" id="signup-confirm-password-feedback"><?= htmlspecialchars(Helper::firstError('confirm_password')) ?></small>
                 </div>
 
                 <!-- Submit Button -->
@@ -89,6 +62,112 @@ $csrfToken = Helper::generateCsrfToken();
     </div>
 
     <script src="<?php echo Helper::url('assets/javascript/main.js'); ?>"></script>
+    <script>
+        const AVAILABILITY_URL = '<?php echo Helper::url('api/validation/account-availability'); ?>';
+        const signupEmailInput = document.getElementById('signup-email');
+        const signupPasswordInput = document.getElementById('signup-password');
+        const signupConfirmPasswordInput = document.getElementById('signup-confirm-password');
+        const signupEmailFeedback = document.getElementById('signup-email-feedback');
+        const signupPasswordFeedback = document.getElementById('signup-password-feedback');
+        const signupConfirmPasswordFeedback = document.getElementById('signup-confirm-password-feedback');
+        let signupEmailCheckTimer = null;
+        let signupEmailCheckController = null;
+
+        function setFeedback(element, message = '', type = '') {
+            element.textContent = message;
+            element.className = `field-feedback${type ? ' ' + type : ''}`;
+        }
+
+        function validateSignupPassword() {
+            const password = signupPasswordInput.value;
+            if (password === '') {
+                setFeedback(signupPasswordFeedback, 'Password is required.', 'error');
+                return false;
+            }
+
+            if (password.length < 6) {
+                setFeedback(signupPasswordFeedback, 'Password must be at least 6 characters.', 'error');
+                return false;
+            }
+
+            setFeedback(signupPasswordFeedback, '');
+            return true;
+        }
+
+        function validateSignupConfirmPassword() {
+            const confirmPassword = signupConfirmPasswordInput.value;
+            if (confirmPassword === '') {
+                setFeedback(signupConfirmPasswordFeedback, 'Please confirm your password.', 'error');
+                return false;
+            }
+
+            if (confirmPassword !== signupPasswordInput.value) {
+                setFeedback(signupConfirmPasswordFeedback, 'Passwords do not match.', 'error');
+                return false;
+            }
+
+            setFeedback(signupConfirmPasswordFeedback, '');
+            return true;
+        }
+
+        async function checkSignupEmailAvailability() {
+            const email = signupEmailInput.value.trim();
+
+            if (email === '') {
+                setFeedback(signupEmailFeedback, 'Email is required.', 'error');
+                return false;
+            }
+
+            if (signupEmailCheckController) {
+                signupEmailCheckController.abort();
+            }
+
+            signupEmailCheckController = new AbortController();
+
+            try {
+                const response = await fetch(`${AVAILABILITY_URL}?field=email&value=${encodeURIComponent(email)}`, {
+                    signal: signupEmailCheckController.signal,
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                const result = await response.json();
+
+                if (!result.available) {
+                    setFeedback(signupEmailFeedback, result.message, 'error');
+                    return false;
+                }
+
+                setFeedback(signupEmailFeedback, result.message, 'success');
+                return true;
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    setFeedback(signupEmailFeedback, 'Unable to verify email right now.', 'error');
+                }
+                return false;
+            }
+        }
+
+        signupEmailInput.addEventListener('input', () => {
+            setFeedback(signupEmailFeedback, '');
+            if (signupEmailCheckTimer) {
+                clearTimeout(signupEmailCheckTimer);
+            }
+
+            signupEmailCheckTimer = setTimeout(() => {
+                checkSignupEmailAvailability();
+            }, 450);
+        });
+
+        signupPasswordInput.addEventListener('input', () => {
+            validateSignupPassword();
+            if (signupConfirmPasswordInput.value !== '') {
+                validateSignupConfirmPassword();
+            }
+        });
+
+        signupConfirmPasswordInput.addEventListener('input', validateSignupConfirmPassword);
+    </script>
 </body>
 
 </html>

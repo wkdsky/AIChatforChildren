@@ -2,6 +2,10 @@
 
 return [
 
+    'app' => [
+        'timezone' => 'Asia/Shanghai',
+    ],
+
     /**
      * Application base URL
      * Set this to your application's base path

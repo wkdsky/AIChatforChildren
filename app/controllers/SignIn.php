@@ -2,7 +2,9 @@
 
 namespace App\Controllers;
 
+use App\Models\ChildAccount;
 use App\Models\User;
+use Core\Middleware;
 use Valitron\Validator;
 use Utils\Helper;
 
@@ -23,8 +25,7 @@ class SignIn
             die("CSRF validation failed!");
         }
         $v = new Validator($_POST);
-        $v->rule('required', ['email', 'password'])->message('{field} is required');
-        $v->rule('email', 'email')->message('Invalid email format');
+        $v->rule('required', ['identifier', 'password'])->message('{field} is required');
         $v->rule('lengthMin', 'password', 6)->message('Password must be at least 6 characters');
 
         if (!$v->validate()) {
@@ -34,13 +35,31 @@ class SignIn
             exit;
         }
 
-        $email = $_POST['email'];
+        $identifier = trim((string) $_POST['identifier']);
         $password = $_POST['password'];
 
         $user = new User();
-        $user = $user->findByEmail($email);
+        $user = filter_var($identifier, FILTER_VALIDATE_EMAIL)
+            ? $user->findByEmail($identifier)
+            : $user->findChildByName($identifier);
         if ($user) {
             if (password_verify($password, $user->password)) {
+                if ($user->role === 'child') {
+                    $childAccount = new ChildAccount();
+                    $status = $childAccount->getChildUsageStatus((int) $user->id);
+
+                    if (!$status) {
+                        self::showError('identifier', 'Child account settings are unavailable', 'sign-in');
+                    }
+
+                    $blockReason = Middleware::childAccessBlockReason($status);
+                    if ($blockReason !== null) {
+                        self::showError('identifier', $blockReason, 'sign-in');
+                    }
+
+                    $childAccount->recordLogin((int) $user->id);
+                }
+
                 $_SESSION['user'] = [
                     'id' => $user->id,
                     'name' => $user->name,
@@ -50,6 +69,10 @@ class SignIn
                     'last_activity' => time(),
 
                 ];
+
+                if ($user->role === 'child') {
+                    $_SESSION['child_usage_last_tracked_at'] = time();
+                }
                 if (!empty($_POST['remember_me'])) {
                     setcookie("remember_me", base64_encode($user->id), time() + (30 * 24 * 60 * 60), "/", "", true, true);
                 }
@@ -66,10 +89,10 @@ class SignIn
                 }
             } else {
 
-                self::showError('general', 'Wrong credentials supplied', 'sign-in');
+                self::showError('password', 'Wrong credentials supplied', 'sign-in');
             }
         } else {
-            self::showError('email', "Email address not found", "sign-in");
+            self::showError('identifier', "Account not found", "sign-in");
         }
     }
 

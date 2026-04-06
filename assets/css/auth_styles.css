@@ -74,8 +74,15 @@ body {
     margin-bottom: 20px;
 }
 
+.signup-notice {
+    margin: -8px 0 20px;
+    color: #666;
+    font-size: 14px;
+    text-align: center;
+}
+
 .input-group {
-    margin-bottom: 15px;
+    margin-bottom: 10px;
     position: relative;
 }
 
@@ -104,6 +111,24 @@ body {
     transform: translateY(-50%);
     cursor: pointer;
     color: #666;
+}
+
+.field-feedback {
+    display: block;
+    min-height: 18px;
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #94a3b8;
+    text-align: left;
+}
+
+.field-feedback.error {
+    color: #dc2626;
+}
+
+.field-feedback.success {
+    color: #059669;
 }
 
 .input-group .fa.fa-eye-slash {
@@ -200,76 +225,5 @@ body {
 
     .left {
         display: none;
-    }
-}
-
-
-/* Role Selection Styling */
-.input-group {
-    position: relative;
-    margin-bottom: 20px;
-}
-
-.input-group select.role-select {
-    width: 100%;
-    padding: 12px 40px 12px 15px;
-    border: 1px solid #ddd;
-    border-radius: 5px;
-    font-size: 14px;
-    background-color: #fff;
-    cursor: pointer;
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    transition: all 0.3s ease;
-}
-
-.input-group select.role-select:focus {
-    outline: none;
-    border-color: #007bff;
-    box-shadow: 0 0 5px rgba(0, 123, 255, 0.3);
-}
-
-.input-group select.role-select option {
-    padding: 10px;
-}
-
-.input-group select.role-select option[disabled] {
-    color: #999;
-}
-
-/* Icon for select dropdown */
-.input-group .select-icon {
-    position: absolute;
-    right: 15px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #999;
-    pointer-events: none;
-    font-size: 16px;
-}
-
-/* Custom dropdown arrow */
-.input-group select.role-select::after {
-    content: '\f107';
-    font-family: 'Font Awesome 6 Free';
-    font-weight: 900;
-    position: absolute;
-    right: 15px;
-    top: 50%;
-    transform: translateY(-50%);
-    pointer-events: none;
-}
-
-/* Error state for select */
-.input-group select.role-select.error {
-    border-color: #dc3545;
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-    .input-group select.role-select {
-        font-size: 16px;
-        /* Prevent zoom on iOS */
     }
 }

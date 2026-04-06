@@ -5,6 +5,8 @@ namespace Core;
 use PDO;
 use PDOException;
 use Core\Config;
+use DateTimeImmutable;
+use DateTimeZone;
 
 class Database
 {
@@ -30,6 +32,11 @@ class Database
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_PERSISTENT => true
             ]);
+
+            $timezoneName = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Shanghai'));
+            $offset = (new DateTimeImmutable('now', new DateTimeZone($timezoneName)))->format('P');
+            $timeZoneStatement = $this->pdo->prepare("SET time_zone = :offset");
+            $timeZoneStatement->execute(['offset' => $offset]);
         } catch (PDOException $e) {
             die("Database connection failed: " . $e->getMessage());
         }

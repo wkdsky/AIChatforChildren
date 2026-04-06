@@ -26,12 +26,10 @@ class SignUp
 
 
         $v = new Validator($_POST);
-        $v->rule('required', ['full_name', 'email', 'password', 'confirm_password', 'role'])->message('{field} is required');
+        $v->rule('required', ['email', 'password', 'confirm_password'])->message('{field} is required');
         $v->rule('email', 'email')->message('Invalid email format');
         $v->rule('lengthMin', 'password', 6)->message('Password must be at least 6 characters');
         $v->rule('equals', 'password', 'confirm_password')->message('Passwords do not match');
-        $v->rule('regex', 'full_name', '/^[A-Za-z\s]+$/')->message('Full name must contain only letters and spaces');
-        $v->rule('in', 'role', ['child', 'parent'])->message('Role must be either child or parent');
 
         // Validate
         if (!$v->validate()) {
@@ -42,10 +40,10 @@ class SignUp
         }
 
         // Get validated inputs
-        $full_name = $_POST['full_name'];
         $password = password_hash($_POST['password'], PASSWORD_BCRYPT);
-        $email = $_POST['email'];
-        $role = $_POST['role'];
+        $email = trim((string) $_POST['email']);
+        $full_name = strstr($email, '@', true) ?: $email;
+        $role = 'parent';
         $verificationCode = rand(100000, 999999);
 
 
@@ -86,4 +84,3 @@ class SignUp
         exit;
     }
 }
-

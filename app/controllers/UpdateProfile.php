@@ -61,9 +61,54 @@ class UpdateProfile
             if (isset($_POST['update-profile'])) {
                 $name = Helper::sanitize($_POST['name'] ?? null, 'string');
                 $v->rule('required', 'name')->message('Name is required');
-                $v->rule('regex', 'name', '/^[A-Za-z\s]+$/')->message('Full name must contain only letters and spaces');
                 if (!$v->validate()) {
                     echo json_encode(['status' => 'error', 'message' => 'Validation failed', 'errors' => $v->errors()]);
+                    return;
+                }
+
+                if (($user->role ?? null) === 'child') {
+                    if (($user->parent_id ?? null) !== null) {
+                        echo json_encode([
+                            'status' => 'error',
+                            'message' => 'This username is managed by your parent.'
+                        ]);
+                        return;
+                    }
+
+                    if (mb_strlen($name) > 100) {
+                        echo json_encode([
+                            'status' => 'error',
+                            'message' => 'Validation failed',
+                            'errors' => ['name' => ['Child username must be 100 characters or fewer']]
+                        ]);
+                        return;
+                    }
+
+                    if (str_contains($name, '@')) {
+                        echo json_encode([
+                            'status' => 'error',
+                            'message' => 'Validation failed',
+                            'errors' => ['name' => ['Child username cannot contain @']]
+                        ]);
+                        return;
+                    }
+
+                    if (preg_match('/[\r\n]/u', $name)) {
+                        echo json_encode([
+                            'status' => 'error',
+                            'message' => 'Validation failed',
+                            'errors' => ['name' => ['Child username cannot contain line breaks']]
+                        ]);
+                        return;
+                    }
+                }
+
+                if (($user->role ?? null) === 'child' && (new User())->childNameExists($name, (int) $user->id)) {
+                    echo json_encode([
+                        'status' => 'error',
+                        'message' => 'Validation failed',
+                        'errors' => ['name' => ['This child account name is already in use']]
+                    ]);
                     return;
                 }
 

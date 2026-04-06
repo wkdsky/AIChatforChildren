@@ -22,27 +22,22 @@ $csrfToken = Helper::generateCsrfToken();
     <div class="container">
         <div class="left">
             <h2>Welcome back!</h2>
-            <p>You can sign in to access your existing account.</p>
+            <p>Parents sign in with email. Children sign in with their account name.</p>
         </div>
         <div class="right">
             <h2>Sign In</h2>
-            <?php if (isset($_SESSION['errors'])): ?>
-                <div class="error-messages">
-                    <?php Helper::showError("general") ?>
-                </div>
-            <?php endif; ?>
 
             <form action="<?php echo Helper::url('sign-in'); ?>" method="POST">
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
 
                 <div class="input-group">
-                    <input type="text" name="email" <?= Helper::oldValue("email", "Enter your email") ?> required>
-                    <?php Helper::showError("email") ?>
+                    <input type="text" name="identifier" id="signin-identifier" <?= Helper::oldValue("identifier", "Enter your email or child account name") ?> required>
+                    <small class="field-feedback <?= Helper::firstError('identifier') !== '' ? 'error' : '' ?>" id="signin-identifier-feedback"><?= htmlspecialchars(Helper::firstError('identifier')) ?></small>
 
                 </div>
                 <div class="input-group">
-                    <input type="password" name="password" <?= Helper::oldValue('password', 'Password') ?> required>
-                    <?php Helper::showError("password") ?>
+                    <input type="password" name="password" id="signin-password" placeholder="Password" required>
+                    <small class="field-feedback <?= Helper::firstError('password') !== '' ? 'error' : '' ?>" id="signin-password-feedback"><?= htmlspecialchars(Helper::firstError('password')) ?></small>
 
                     <i class="fa fa-eye"></i>
                 </div>

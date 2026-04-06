@@ -10,6 +10,9 @@ use App\Controllers\UpdateProfile;
 use App\Controllers\KnowledgeController;
 use App\Controllers\ConversationController;
 use App\Controllers\ChatController;
+use App\Controllers\ParentChildController;
+use App\Controllers\ChildSessionController;
+use App\Controllers\ValidationController;
 use Utils\Helper;
 
 use Bramus\Router\Router;
@@ -299,6 +302,53 @@ class AppRouter
             Middleware::requireAuth();
             $controller = new ConversationController();
             $controller->search();
+        });
+
+        $router->get('/api/parent/children', function () {
+            Middleware::requireAuth();
+            Middleware::requireParent();
+            $controller = new ParentChildController();
+            $controller->list();
+        });
+
+        $router->post('/api/parent/children', function () {
+            Middleware::requireAuth();
+            Middleware::requireParent();
+            $controller = new ParentChildController();
+            $controller->create();
+        });
+
+        $router->post('/api/parent/children/update', function () {
+            Middleware::requireAuth();
+            Middleware::requireParent();
+            $controller = new ParentChildController();
+            $controller->update();
+        });
+
+        $router->post('/api/parent/children/delete', function () {
+            Middleware::requireAuth();
+            Middleware::requireParent();
+            $controller = new ParentChildController();
+            $controller->delete();
+        });
+
+        $router->post('/api/parent/children/toggle-login', function () {
+            Middleware::requireAuth();
+            Middleware::requireParent();
+            $controller = new ParentChildController();
+            $controller->toggleLogin();
+        });
+
+        $router->get('/api/child/session-status', function () {
+            Middleware::requireAuth();
+            Middleware::requireChild();
+            $controller = new ChildSessionController();
+            $controller->status();
+        });
+
+        $router->get('/api/validation/account-availability', function () {
+            $controller = new ValidationController();
+            $controller->checkAccountAvailability();
         });
 
         // Admin post routes are handled directly in the views

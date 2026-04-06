@@ -8,6 +8,7 @@ $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../..');
 $dotenv->load();
 
 $user = $_SESSION['user'];
+$managedChildAccount = substr($user['email'], -12) === '@child.local';
 $csrfToken = Helper::generateCsrfToken();
 include("connect.php");
 ?>
@@ -203,6 +204,119 @@ include("connect.php");
     #lang-toggle-text {
         color: white !important;
     }
+
+    .session-status-banner {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 16px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.16);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        margin-left: auto;
+        min-width: 260px;
+    }
+
+    .session-status-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.18);
+        color: white;
+        flex-shrink: 0;
+    }
+
+    .session-status-content {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+    }
+
+    .session-status-label {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.72);
+    }
+
+    #child-session-remaining {
+        color: white;
+        font-size: 15px;
+        font-weight: 700;
+    }
+
+    .session-status-detail {
+        color: rgba(255, 255, 255, 0.82);
+        font-size: 12px;
+        line-height: 1.4;
+    }
+
+    .session-expired-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 3000;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: rgba(15, 23, 42, 0.55);
+        backdrop-filter: blur(12px);
+    }
+
+    .session-expired-overlay.show {
+        display: flex;
+    }
+
+    .session-expired-card {
+        width: min(420px, 100%);
+        padding: 28px 24px;
+        border-radius: 26px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+        text-align: center;
+    }
+
+    .session-expired-icon {
+        width: 68px;
+        height: 68px;
+        margin: 0 auto 16px;
+        border-radius: 22px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #fb7185 0%, #f97316 100%);
+        color: white;
+        font-size: 28px;
+        box-shadow: 0 14px 30px rgba(249, 115, 22, 0.24);
+    }
+
+    .session-expired-title {
+        margin: 0 0 8px;
+        color: #0f172a;
+        font-size: 22px;
+        font-weight: 700;
+    }
+
+    .session-expired-text {
+        margin: 0;
+        color: #475569;
+        font-size: 14px;
+        line-height: 1.7;
+    }
+
+    @media (max-width: 768px) {
+        .session-status-banner {
+            width: 100%;
+            margin-top: 12px;
+            margin-left: 0;
+            min-width: 0;
+        }
+    }
     </style>
 </head>
 
@@ -255,6 +369,16 @@ include("connect.php");
             <p id="help-status-speech">Speech Recognition: <strong id="speech-support"></strong></p>
 
             <button onclick="hideHelpModal()" id="help-close-btn">我知道了</button>
+        </div>
+    </div>
+
+    <div class="session-expired-overlay" id="session-expired-overlay">
+        <div class="session-expired-card">
+            <div class="session-expired-icon">
+                <i class="fas fa-hourglass-end"></i>
+            </div>
+            <h2 class="session-expired-title" id="session-expired-title">Session ended</h2>
+            <p class="session-expired-text" id="session-expired-text">Your chat time is no longer available. Redirecting to sign in...</p>
         </div>
     </div>
     <div class="navbar">
@@ -315,7 +439,20 @@ include("connect.php");
     <!-- Chat Container (main area) -->
     <div class="chat-container">
         <div class="header">
-            <span id="chat-title">Bitty Chat</span>
+            <div class="header-main">
+                <span id="chat-title">Bitty Chat</span>
+                <span class="header-caption">A calm place to chat, think, and explore</span>
+            </div>
+            <div class="session-status-banner" id="child-session-status">
+                <div class="session-status-icon">
+                    <i class="fas fa-hourglass-half"></i>
+                </div>
+                <div class="session-status-content">
+                    <span class="session-status-label">Today's Time</span>
+                    <span id="child-session-remaining">Loading usage...</span>
+                    <span class="session-status-detail" id="child-session-window"></span>
+                </div>
+            </div>
             <div class="logout-link" style="display: none;">
                 <a href="<?php echo Helper::url('logout'); ?>" id="logout-link">Logout</a>
             </div>
@@ -355,17 +492,21 @@ include("connect.php");
                 <form id="childProfileForm">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                     <div class="profile-form-group">
-                        <label for="child-name"><i class="fas fa-signature"></i> Name</label>
-                        <input type="text" name="name" id="child-name" value="<?= htmlspecialchars($user['name']) ?>" required>
+                        <label for="child-name"><i class="fas fa-signature"></i> <?= $managedChildAccount ? 'Username' : 'Name' ?></label>
+                        <input type="text" name="name" id="child-name" value="<?= htmlspecialchars($user['name']) ?>" <?= $managedChildAccount ? 'disabled' : 'required' ?>>
                         <small class="profile-error-text" id="childNameError"></small>
                     </div>
                     <div class="profile-form-group">
-                        <label for="child-email"><i class="fas fa-envelope"></i> Email (Cannot be changed)</label>
-                        <input id="child-email" name="email" value="<?= htmlspecialchars($user['email']) ?>" disabled>
+                        <label for="child-email"><i class="fas fa-envelope"></i> <?= $managedChildAccount ? 'Parent-managed account' : 'Email (Cannot be changed)' ?></label>
+                        <input id="child-email" name="email" value="<?= htmlspecialchars($managedChildAccount ? 'This account is managed by your parent.' : $user['email']) ?>" disabled>
                     </div>
+                    <?php if (!$managedChildAccount): ?>
                     <button name="update-profile" type="submit" class="profile-btn">
                         <i class="fas fa-save"></i> Update Profile
                     </button>
+                    <?php else: ?>
+                    <p class="profile-error-text" style="display:block;">Your parent manages this username.</p>
+                    <?php endif; ?>
                 </form>
 
                 <div class="profile-divider"></div>
@@ -407,12 +548,17 @@ include("connect.php");
     <script>
         const CHAT_API_URL = "<?= Helper::url('api/chat/reply') ?>";
         const API_BASE_URL = "<?= Helper::url('api/conversations') ?>";
+        const SESSION_STATUS_URL = "<?= Helper::url('api/child/session-status') ?>";
         const CSRF_TOKEN = "<?= htmlspecialchars($csrfToken, ENT_QUOTES) ?>";
+        const LOGOUT_URL = "<?= Helper::url('logout') ?>";
 
         // Language configuration - centralized translations
         const translations = {
             'zh-CN': {
                 chatTitle: 'Bitty 聊天室',
+                headerCaption: '一个安全、安静、可以慢慢聊天和探索的地方',
+                todayTime: '今日时长',
+                loadingUsage: '正在加载时长...',
                 profileName: 'Bitty 在这里',
                 messagePlaceholder: '输入消息...',
                 send: '发送',
@@ -437,10 +583,17 @@ include("connect.php");
                 searchPlaceholder: '搜索对话...',
                 newChatTitle: '新对话',
                 noChats: '暂无对话',
-                deleteConfirm: '确定要删除这个对话吗？'
+                deleteConfirm: '确定要删除这个对话吗？',
+                sessionLeft: '今日剩余 {minutes} 分钟',
+                sessionWindow: '已用 {used}/{total} 分钟 · 时段 {start}-{end}',
+                sessionEndedTitle: '本次使用已结束',
+                sessionEndedText: '可用时段已结束或家长已暂停登录，正在返回登录页。'
             },
             'en-US': {
                 chatTitle: 'Bitty Chat',
+                headerCaption: 'A calm place to chat, think, and explore',
+                todayTime: "Today's Time",
+                loadingUsage: 'Loading usage...',
                 profileName: 'Bitty is here',
                 messagePlaceholder: 'Type a message...',
                 send: 'Send',
@@ -465,7 +618,11 @@ include("connect.php");
                 searchPlaceholder: 'Search chats...',
                 newChatTitle: 'New Chat',
                 noChats: 'No chats yet',
-                deleteConfirm: 'Are you sure you want to delete this chat?'
+                deleteConfirm: 'Are you sure you want to delete this chat?',
+                sessionLeft: '{minutes} min left today',
+                sessionWindow: 'Used {used}/{total} min · Window {start}-{end}',
+                sessionEndedTitle: 'Session ended',
+                sessionEndedText: 'Your access window has ended or a parent paused login. Redirecting to sign in...'
             }
         };
 
@@ -502,11 +659,16 @@ include("connect.php");
         let currentUtterance = null;
         let voiceAvailable = false;
         let isVoiceChat = false;  // Track if current message is from voice chat
+        let childSessionInterval = null;
+        let childSessionLogoutTimer = null;
+        let childSessionLocked = false;
 
 
         // Update all UI text elements
         function updateUI() {
             document.getElementById('chat-title').textContent = t('chatTitle');
+            document.querySelector('.header-caption').textContent = t('headerCaption');
+            document.querySelector('.session-status-label').textContent = t('todayTime');
             document.getElementById('message-input').placeholder = t('messagePlaceholder');
             document.getElementById('send-btn').textContent = t('send');
             document.getElementById('stop-btn').textContent = t('stop');
@@ -556,6 +718,123 @@ include("connect.php");
             document.getElementById('speech-support').textContent = t('requireHttps');
 
             return isSecure || hostname === 'localhost';
+        }
+
+        function renderChildSessionStatus(status) {
+            document.getElementById('child-session-remaining').textContent = t('sessionLeft').replace('{minutes}', status.remaining_minutes);
+            document.getElementById('child-session-window').textContent = t('sessionWindow')
+                .replace('{used}', status.used_today_minutes)
+                .replace('{total}', status.daily_login_minutes)
+                .replace('{start}', status.allowed_login_start)
+                .replace('{end}', status.allowed_login_end);
+        }
+
+        function clearChildSessionLogoutTimer() {
+            if (childSessionLogoutTimer) {
+                clearTimeout(childSessionLogoutTimer);
+                childSessionLogoutTimer = null;
+            }
+        }
+
+        function parseServerDateTime(serverTime) {
+            if (!serverTime) {
+                return null;
+            }
+
+            const date = new Date(serverTime.replace(' ', 'T'));
+            return Number.isNaN(date.getTime()) ? null : date;
+        }
+
+        function scheduleChildSessionLogout(status) {
+            clearChildSessionLogoutTimer();
+
+            const serverTime = parseServerDateTime(status.server_time);
+            if (!serverTime) {
+                return;
+            }
+
+            const logoutDelays = [];
+            const remainingMinutes = Number(status.remaining_minutes);
+            if (Number.isFinite(remainingMinutes) && remainingMinutes > 0) {
+                logoutDelays.push(remainingMinutes * 60 * 1000);
+            }
+
+            if (typeof status.allowed_login_end === 'string' && status.allowed_login_end.includes(':')) {
+                const [hour, minute] = status.allowed_login_end.split(':').map(value => parseInt(value, 10) || 0);
+                const endTime = new Date(serverTime);
+                endTime.setHours(hour, minute, 0, 0);
+
+                const msUntilEnd = endTime.getTime() - serverTime.getTime();
+                if (msUntilEnd > 0) {
+                    logoutDelays.push(msUntilEnd);
+                }
+            }
+
+            if (logoutDelays.length === 0) {
+                return;
+            }
+
+            childSessionLogoutTimer = window.setTimeout(() => {
+                forceChildLogout();
+            }, Math.min(...logoutDelays));
+        }
+
+        function forceChildLogout(message = '') {
+            if (childSessionLocked) {
+                return;
+            }
+
+            childSessionLocked = true;
+            clearChildSessionLogoutTimer();
+
+            if (childSessionInterval) {
+                clearInterval(childSessionInterval);
+                childSessionInterval = null;
+            }
+
+            document.getElementById('session-expired-title').textContent = t('sessionEndedTitle');
+            document.getElementById('session-expired-text').textContent = message || t('sessionEndedText');
+            document.getElementById('session-expired-overlay').classList.add('show');
+
+            window.setTimeout(() => {
+                window.location.href = LOGOUT_URL;
+            }, 1200);
+        }
+
+        async function parseJsonResponse(response) {
+            const payload = await response.text();
+
+            try {
+                return payload ? JSON.parse(payload) : {};
+            } catch (error) {
+                return {
+                    success: false,
+                    message: 'Unable to refresh session status'
+                };
+            }
+        }
+
+        async function loadChildSessionStatus() {
+            try {
+                const response = await fetch(SESSION_STATUS_URL, {
+                    headers: {
+                        'Accept': 'application/json'
+                    },
+                    cache: 'no-store'
+                });
+
+                const result = await parseJsonResponse(response);
+                if (!response.ok || !result.success) {
+                    forceChildLogout(result.error || result.message || t('sessionEndedText'));
+                    return;
+                }
+
+                renderChildSessionStatus(result.status);
+                scheduleChildSessionLogout(result.status);
+            } catch (error) {
+                console.error('Session status error:', error);
+                forceChildLogout(error.message || t('sessionEndedText'));
+            }
         }
 
         // Initialize Speech Recognition
@@ -1567,6 +1846,9 @@ include("connect.php");
                     }
                 });
             }
+
+            loadChildSessionStatus();
+            childSessionInterval = setInterval(loadChildSessionStatus, 30000);
         });
     </script>
 </body>
