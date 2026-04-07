@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Models\ChildAccount;
 use App\Models\User;
 use DateTimeImmutable;
+use Utils\AppTime;
 use Utils\Helper;
 use Valitron\Validator;
 
@@ -64,7 +65,7 @@ class ParentChildController
                 'used_today_minutes' => $usedToday,
                 'remaining_today_minutes' => max(0, $dailyLimit - $usedToday),
                 'login_disabled' => (bool) ($child['login_disabled'] ?? false),
-                'last_login_at' => $child['last_login_at'] ?? null,
+                'last_login_at' => AppTime::toIso8601($child['last_login_at'] ?? null),
                 'created_at' => $child['created_at'],
             ];
         }, $children);
@@ -259,8 +260,8 @@ class ParentChildController
             $validator->error('allowed_login_end', 'Please choose a valid end time');
         }
 
-        if ($startTime && $endTime && $startTime >= $endTime) {
-            $validator->error('allowed_login_end', 'End time must be later than start time');
+        if ($startTime && $endTime && $startTime === $endTime) {
+            $validator->error('allowed_login_end', 'Start and end time cannot be the same');
         }
 
         $passwordProvided = $input['password'] !== '' || $input['confirm_password'] !== '';

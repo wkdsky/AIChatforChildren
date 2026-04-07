@@ -3,6 +3,8 @@
 namespace Core;
 
 use App\Models\ChildAccount;
+use Utils\AppTime;
+use Utils\ChildLoginWindow;
 use Utils\Helper;
 
 class Middleware
@@ -45,19 +47,31 @@ class Middleware
             return 'This child account has been temporarily disabled by the parent.';
         }
 
-        $now = date('H:i:s');
-        $allowedStart = $status['allowed_login_start'] ?? null;
-        $allowedEnd = $status['allowed_login_end'] ?? null;
+        $window = ChildLoginWindow::evaluate(
+            $status['allowed_login_start'] ?? null,
+            $status['allowed_login_end'] ?? null,
+            AppTime::now()
+        );
 
-        if ($allowedStart && $allowedEnd && ($now < $allowedStart || $now >= $allowedEnd)) {
-            return 'Child login is not allowed at this time.';
+        if ($window['is_configured'] && !$window['is_allowed_now']) {
+            return sprintf(
+                'Child login is allowed between %s and %s (%s). Current server time is %s.',
+                substr((string) $window['window_start'], 0, 5),
+                substr((string) $window['window_end'], 0, 5),
+                $window['timezone'],
+                $window['now_time_short']
+            );
         }
 
         $dailyLimit = (int) ($status['daily_login_minutes'] ?? 0);
         $usedToday = (int) ($status['used_today_minutes'] ?? 0);
 
         if ($dailyLimit > 0 && $usedToday >= $dailyLimit) {
-            return 'Daily login time has been used up.';
+            return sprintf(
+                'Daily login time has been used up (%d/%d minutes today).',
+                $usedToday,
+                $dailyLimit
+            );
         }
 
         return null;

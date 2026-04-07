@@ -4,7 +4,8 @@ namespace App\Controllers;
 
 use App\Models\ChildAccount;
 use Core\Middleware;
-use DateTimeImmutable;
+use Utils\AppTime;
+use Utils\ChildLoginWindow;
 
 class ChildSessionController
 {
@@ -37,6 +38,12 @@ class ChildSessionController
         $dailyLimit = (int) ($status['daily_login_minutes'] ?? 0);
         $usedToday = (int) ($status['used_today_minutes'] ?? 0);
         $remainingMinutes = max(0, $dailyLimit - $usedToday);
+        $serverNow = AppTime::now();
+        $window = ChildLoginWindow::evaluate(
+            $status['allowed_login_start'] ?? null,
+            $status['allowed_login_end'] ?? null,
+            $serverNow
+        );
 
         $this->jsonResponse([
             'success' => true,
@@ -49,7 +56,12 @@ class ChildSessionController
                 'allowed_login_start' => $this->formatTime((string) $status['allowed_login_start']),
                 'allowed_login_end' => $this->formatTime((string) $status['allowed_login_end']),
                 'last_login_at' => $status['last_login_at'],
-                'server_time' => (new DateTimeImmutable())->format('Y-m-d H:i:s'),
+                'within_login_window' => $window['is_allowed_now'],
+                'spans_overnight' => $window['spans_overnight'],
+                'server_time' => $serverNow->format('Y-m-d H:i:s'),
+                'server_time_display' => $serverNow->format('H:i'),
+                'server_time_iso' => $serverNow->format(DATE_ATOM),
+                'server_timezone' => AppTime::timezoneName(),
             ],
         ]);
     }

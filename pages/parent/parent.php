@@ -1,9 +1,11 @@
 <?php
 
+use Core\Config;
 use Utils\Helper;
 
 $user = $_SESSION['user'];
 $csrfToken = Helper::generateCsrfToken();
+$appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Shanghai'));
 
 ?>
 <!DOCTYPE html>
@@ -627,7 +629,7 @@ $csrfToken = Helper::generateCsrfToken();
     }
 
     .report-modal-content {
-      max-width: 980px;
+      max-width: 1280px;
     }
 
     .report-toolbar {
@@ -639,7 +641,6 @@ $csrfToken = Helper::generateCsrfToken();
       margin-bottom: 18px;
     }
 
-    .report-range-switch,
     .report-metric-switch {
       display: inline-flex;
       gap: 8px;
@@ -670,10 +671,175 @@ $csrfToken = Helper::generateCsrfToken();
       line-height: 1.6;
     }
 
-    .report-layout {
+    .report-shell {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 18px;
+    }
+
+    .report-sidebar,
+    .report-main {
       display: flex;
       flex-direction: column;
       gap: 18px;
+      min-width: 0;
+    }
+
+    .report-sidebar-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+      padding: 18px;
+    }
+
+    .report-settings-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin: 14px 0;
+    }
+
+    .report-settings-grid label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      color: #475569;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .report-settings-grid select {
+      width: 100%;
+      border: 1px solid #d7dbe8;
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #fff;
+      color: #0f172a;
+    }
+
+    .report-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #0f172a;
+      font-weight: 600;
+    }
+
+    .report-history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 520px;
+      overflow-y: auto;
+      margin-top: 14px;
+    }
+
+    .report-history-item {
+      width: 100%;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      border-radius: 16px;
+      padding: 12px 14px;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      color: #0f172a;
+    }
+
+    .report-history-item.in-selection {
+      gap: 10px;
+    }
+
+    .report-history-item:hover {
+      border-color: #c7d2fe;
+      box-shadow: 0 10px 24px rgba(99, 102, 241, 0.12);
+    }
+
+    .report-history-item.active {
+      border-color: #667eea;
+      background: #eef2ff;
+      box-shadow: 0 14px 28px rgba(99, 102, 241, 0.16);
+    }
+
+    .report-history-item.live {
+      background: #f8fafc;
+    }
+
+    .report-history-item.selected {
+      border-color: #6366f1;
+      background: #eef2ff;
+    }
+
+    .report-history-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .report-history-body {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .report-history-check {
+      flex: 0 0 auto;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 1px solid #cbd5e1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: transparent;
+      background: #fff;
+      margin-top: 2px;
+      transition: all 0.2s ease;
+      font-size: 11px;
+    }
+
+    .report-history-item.selected .report-history-check {
+      border-color: #4338ca;
+      background: #4338ca;
+      color: #fff;
+    }
+
+    .report-panel-actions,
+    .report-selection-quick {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .report-selection-toolbar {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .report-selection-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .report-history-title {
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .report-history-meta {
+      color: #64748b;
+      font-size: 12px;
+      line-height: 1.5;
     }
 
     .report-summary-grid {
@@ -916,12 +1082,49 @@ $csrfToken = Helper::generateCsrfToken();
       color: #b91c1c;
     }
 
+    .report-inline-level {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 8px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .report-inline-level.low {
+      background: #ecfdf5;
+      color: #047857;
+    }
+
+    .report-inline-level.medium {
+      background: #fff7ed;
+      color: #c2410c;
+    }
+
+    .report-inline-level.high {
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+
     .btn-danger {
       transition: background-color 0.2s ease;
     }
 
     .btn-danger:hover {
       background-color: #c82333 !important;
+    }
+
+    .report-empty-state {
+      padding: 22px;
+      border-radius: 18px;
+      border: 1px dashed #cbd5e1;
+      background: #f8fafc;
+      color: #475569;
+      line-height: 1.7;
     }
 
     @media (max-width: 768px) {
@@ -951,7 +1154,9 @@ $csrfToken = Helper::generateCsrfToken();
       .form-grid,
       .settings-overview,
       .report-summary-grid,
-      .report-analysis-grid {
+      .report-analysis-grid,
+      .report-settings-grid,
+      .report-shell {
         grid-template-columns: 1fr;
       }
 
@@ -1180,6 +1385,7 @@ $csrfToken = Helper::generateCsrfToken();
         </div>
 
         <p class="form-note">Update the daily login window, total allowed minutes, or set a new password. Leaving the password fields empty keeps the current password unchanged.</p>
+        <p class="form-note">Login windows are checked in <?= htmlspecialchars($appTimezone, ENT_QUOTES) ?> server time. Overnight windows such as 21:00-06:00 are supported.</p>
 
         <div class="manage-login-actions">
           <button type="button" id="manageChildToggleLoginBtn" class="warning-btn" onclick="toggleChildLoginFromModal()">
@@ -1247,12 +1453,7 @@ $csrfToken = Helper::generateCsrfToken();
       </div>
       <div class="modal-body">
         <div class="report-toolbar">
-          <div class="report-range-switch">
-            <button type="button" class="report-switch-btn" data-report-range="7">7 Days</button>
-            <button type="button" class="report-switch-btn active" data-report-range="14">14 Days</button>
-            <button type="button" class="report-switch-btn" data-report-range="30">30 Days</button>
-          </div>
-          <div class="report-helper-text" id="reportGeneratedHint">Recent behavior and content summaries for the selected child.</div>
+          <div class="report-helper-text" id="reportGeneratedHint">Saved reports appear on the left. Open one or generate a new report.</div>
         </div>
 
         <div id="childReportLoading" class="empty-state" style="display: none;">
@@ -1260,32 +1461,92 @@ $csrfToken = Helper::generateCsrfToken();
           <div>Loading report...</div>
         </div>
 
-        <div id="childReportContent" class="report-layout" style="display: none;">
-          <div id="childReportSummary" class="report-summary-grid"></div>
-
-          <section class="report-panel">
-            <div class="report-panel-header">
-              <h3>Recent Activity</h3>
-              <div class="report-metric-switch">
-                <button type="button" class="report-switch-btn active" data-report-metric="child_message_count">Messages</button>
-                <button type="button" class="report-switch-btn" data-report-metric="login_count">Logins</button>
-                <button type="button" class="report-switch-btn" data-report-metric="used_minutes">Minutes</button>
+        <div id="childReportContent" class="report-shell" style="display: none;">
+          <aside class="report-sidebar">
+            <section class="report-sidebar-card">
+              <div class="report-panel-header">
+                <h3>Auto Reports</h3>
               </div>
-            </div>
-            <div id="childReportInsights" class="report-insights"></div>
-            <div id="childReportChart" class="report-chart"></div>
-          </section>
+              <label class="report-toggle-row" for="autoReportEnabled">
+                <input type="checkbox" id="autoReportEnabled">
+                <span>Generate automatically</span>
+              </label>
+              <div class="report-settings-grid">
+                <label for="autoReportFrequency">
+                  <span>Every</span>
+                  <select id="autoReportFrequency">
+                    <option value="7">7 days</option>
+                    <option value="14">14 days</option>
+                    <option value="30">30 days</option>
+                  </select>
+                </label>
+                <label for="autoReportWindow">
+                  <span>Window</span>
+                  <select id="autoReportWindow">
+                    <option value="7">7 days</option>
+                    <option value="14">14 days</option>
+                    <option value="30">30 days</option>
+                  </select>
+                </label>
+              </div>
+              <button type="button" class="btn btn-inline" id="saveReportSettingsBtn">Save Schedule</button>
+              <div class="report-helper-text" id="autoReportMeta"></div>
+            </section>
 
-          <section class="report-panel">
-            <div class="report-panel-header">
-              <h3>Chat Content Analysis</h3>
-              <button type="button" class="btn btn-inline btn-secondary" id="generateContentReportBtn" onclick="generateContentReport()">
-                Generate Analysis
-              </button>
-            </div>
-            <div id="childReportSampleStatus" class="report-content-status"></div>
-            <div id="childReportAnalysis"></div>
-          </section>
+            <section class="report-sidebar-card">
+              <div class="report-panel-header">
+                <h3>History</h3>
+                <div class="report-panel-actions">
+                  <button type="button" class="btn btn-inline btn-secondary" id="generateContentReportBtn" onclick="generateContentReport()">
+                    Generate Now
+                  </button>
+                  <button type="button" class="btn btn-inline" id="toggleTrendSelectionBtn" onclick="toggleTrendSelectionMode()">
+                    Cumulative Analysis
+                  </button>
+                </div>
+              </div>
+              <div id="reportSelectionToolbar" class="report-selection-toolbar" style="display: none;">
+                <div class="report-selection-quick">
+                  <button type="button" class="report-switch-btn" onclick="selectTrendRange('1m')">1 Month</button>
+                  <button type="button" class="report-switch-btn" onclick="selectTrendRange('3m')">3 Months</button>
+                  <button type="button" class="report-switch-btn" onclick="selectTrendRange('6m')">6 Months</button>
+                  <button type="button" class="report-switch-btn" onclick="selectAllTrendReports()">All</button>
+                </div>
+                <div class="report-selection-actions">
+                  <div class="report-helper-text" id="reportSelectionMeta">All saved reports selected.</div>
+                  <button type="button" class="btn btn-inline" id="runTrendAnalysisBtn" onclick="generateTrendAnalysis()">Analyze Selected</button>
+                  <button type="button" class="btn btn-inline btn-secondary" onclick="toggleTrendSelectionMode(false)">Cancel</button>
+                </div>
+              </div>
+              <div class="report-history-list" id="childReportHistoryList"></div>
+            </section>
+          </aside>
+
+          <div class="report-main">
+            <div id="childReportSummary" class="report-summary-grid"></div>
+
+            <section class="report-panel">
+              <div class="report-panel-header">
+                <h3>Recent Activity</h3>
+                <div class="report-metric-switch">
+                  <button type="button" class="report-switch-btn active" data-report-metric="child_message_count">Messages</button>
+                  <button type="button" class="report-switch-btn" data-report-metric="login_count">Logins</button>
+                  <button type="button" class="report-switch-btn" data-report-metric="used_minutes">Minutes</button>
+                </div>
+              </div>
+              <div id="childReportInsights" class="report-insights"></div>
+              <div id="childReportChart" class="report-chart"></div>
+            </section>
+
+            <section class="report-panel">
+              <div class="report-panel-header">
+                <h3>Report Details</h3>
+                <div class="report-helper-text" id="selectedReportMeta">No report selected</div>
+              </div>
+              <div id="childReportSampleStatus" class="report-content-status"></div>
+              <div id="childReportAnalysis"></div>
+            </section>
+          </div>
         </div>
       </div>
     </div>
@@ -1297,10 +1558,15 @@ $csrfToken = Helper::generateCsrfToken();
     const DELETE_CHILD_API_URL = '<?= Helper::url('api/parent/children/delete') ?>';
     const TOGGLE_CHILD_LOGIN_API_URL = '<?= Helper::url('api/parent/children/toggle-login') ?>';
     const CHILD_REPORT_API_URL = '<?= Helper::url('api/parent/children/report') ?>';
+    const CHILD_REPORT_HISTORY_API_URL = '<?= Helper::url('api/parent/children/report/history') ?>';
+    const CHILD_REPORT_ITEM_API_URL = '<?= Helper::url('api/parent/children/report/item') ?>';
     const CHILD_REPORT_CONTENT_API_URL = '<?= Helper::url('api/parent/children/report/content') ?>';
+    const CHILD_REPORT_SETTINGS_API_URL = '<?= Helper::url('api/parent/children/report/settings') ?>';
+    const CHILD_REPORT_TREND_API_URL = '<?= Helper::url('api/parent/children/report/trend') ?>';
     const UPDATE_PROFILE_URL = '<?= Helper::url('update-profile') ?>';
     const VALIDATION_API_URL = '<?= Helper::url('api/validation/account-availability') ?>';
     const CSRF_TOKEN = '<?= htmlspecialchars($csrfToken, ENT_QUOTES) ?>';
+    const APP_TIMEZONE = '<?= htmlspecialchars($appTimezone, ENT_QUOTES) ?>';
     let alertTimeout = null;
     let pageAlertTimeout = null;
     let childrenState = [];
@@ -1308,12 +1574,124 @@ $csrfToken = Helper::generateCsrfToken();
     let childNameCheckController = null;
     let reportState = {
       childId: null,
-      days: 14,
       metric: 'child_message_count',
-      overview: null,
-      contentCache: {}
+      activeSnapshot: null,
+      activeRecord: null,
+      activeSource: 'empty',
+      settings: null,
+      history: [],
+      initializedSelection: false,
+      historyLoaded: false,
+      requestKey: 0,
+      selectionToken: 0,
+      selectionMode: false,
+      selectedReportIds: [],
+      trendAnalysis: null
     };
     const TIME_MINUTE_OPTIONS = ['00', '10', '20', '30', '40', '50'];
+
+    function setActiveReportMetricButton(metric) {
+      document.querySelectorAll('[data-report-metric]').forEach(item => {
+        item.classList.toggle('active', item.dataset.reportMetric === metric);
+      });
+    }
+
+    function beginReportRequest(childId) {
+      reportState.requestKey += 1;
+      reportState.childId = childId;
+      return reportState.requestKey;
+    }
+
+    function isActiveReportRequest(requestKey, childId) {
+      return reportState.requestKey === requestKey
+        && Number(reportState.childId) === Number(childId)
+        && document.getElementById('childReportModal').style.display === 'block';
+    }
+
+    function beginReportSelection() {
+      reportState.selectionToken += 1;
+      return reportState.selectionToken;
+    }
+
+    function isActiveReportSelection(requestKey, childId, selectionToken) {
+      return isActiveReportRequest(requestKey, childId)
+        && reportState.selectionToken === selectionToken;
+    }
+
+    function updateTrendSelectionMeta() {
+      const selectedCount = reportState.selectedReportIds.length;
+      const totalCount = reportState.history.length;
+      document.getElementById('reportSelectionMeta').textContent = totalCount === 0
+        ? 'No saved reports yet.'
+        : `${selectedCount} of ${totalCount} saved report(s) selected.`;
+    }
+
+    function toggleTrendSelectionMode(forceState) {
+      const nextState = typeof forceState === 'boolean' ? forceState : !reportState.selectionMode;
+      reportState.selectionMode = nextState;
+      document.getElementById('reportSelectionToolbar').style.display = nextState ? 'flex' : 'none';
+      document.getElementById('toggleTrendSelectionBtn').textContent = nextState ? 'Selection On' : 'Cumulative Analysis';
+
+      if (nextState) {
+        if (reportState.selectedReportIds.length === 0) {
+          reportState.selectedReportIds = reportState.history.map(item => Number(item.id));
+        }
+      }
+
+      updateTrendSelectionMeta();
+      renderHistoryList();
+    }
+
+    function selectAllTrendReports() {
+      reportState.selectedReportIds = reportState.history.map(item => Number(item.id));
+      updateTrendSelectionMeta();
+      renderHistoryList();
+    }
+
+    function selectTrendRange(rangeKey) {
+      const months = {
+        '1m': 1,
+        '3m': 3,
+        '6m': 6
+      }[rangeKey];
+
+      if (!months) {
+        return;
+      }
+
+      const cutoff = new Date();
+      cutoff.setMonth(cutoff.getMonth() - months);
+
+      reportState.selectedReportIds = reportState.history
+        .filter(item => {
+          if (!item.created_at) {
+            return false;
+          }
+
+          const createdAt = new Date(item.created_at);
+          return !Number.isNaN(createdAt.getTime()) && createdAt >= cutoff;
+        })
+        .map(item => Number(item.id));
+
+      updateTrendSelectionMeta();
+      renderHistoryList();
+    }
+
+    function toggleTrendReportSelection(reportId) {
+      const numericId = Number(reportId);
+      if (!numericId) {
+        return;
+      }
+
+      if (reportState.selectedReportIds.includes(numericId)) {
+        reportState.selectedReportIds = reportState.selectedReportIds.filter(id => id !== numericId);
+      } else {
+        reportState.selectedReportIds = [...reportState.selectedReportIds, numericId];
+      }
+
+      updateTrendSelectionMeta();
+      renderHistoryList();
+    }
 
     function toggleDropdown() {
       document.getElementById('userDropdown').classList.toggle('show');
@@ -1365,17 +1743,46 @@ $csrfToken = Helper::generateCsrfToken();
         return;
       }
 
-      reportState.childId = childId;
-      reportState.overview = null;
+      beginReportRequest(childId);
+      reportState.metric = 'child_message_count';
+      reportState.activeSnapshot = null;
+      reportState.activeRecord = null;
+      reportState.activeSource = 'empty';
+      reportState.settings = null;
+      reportState.history = [];
+      reportState.initializedSelection = false;
+      reportState.historyLoaded = false;
+      reportState.selectionToken = 0;
+      reportState.selectionMode = false;
+      reportState.selectedReportIds = [];
+      reportState.trendAnalysis = null;
+      setActiveReportMetricButton(reportState.metric);
       document.getElementById('childReportTitle').textContent = `${child.name}'s Report`;
       document.getElementById('childReportModal').style.display = 'block';
       document.getElementById('childReportContent').style.display = 'none';
       document.getElementById('childReportLoading').style.display = 'block';
+      document.getElementById('reportGeneratedHint').textContent = 'Loading saved reports and report settings.';
+      document.getElementById('autoReportEnabled').checked = false;
+      document.getElementById('autoReportFrequency').value = '7';
+      document.getElementById('autoReportWindow').value = '14';
+      document.getElementById('autoReportMeta').textContent = 'Loading report schedule...';
+      document.getElementById('toggleTrendSelectionBtn').textContent = 'Cumulative Analysis';
+      document.getElementById('reportSelectionToolbar').style.display = 'none';
+      document.getElementById('reportSelectionMeta').textContent = 'All saved reports selected.';
+      document.getElementById('selectedReportMeta').textContent = 'No report selected';
+      document.getElementById('childReportSummary').innerHTML = '';
+      document.getElementById('childReportInsights').innerHTML = '';
+      document.getElementById('childReportChart').innerHTML = '';
+      document.getElementById('childReportSampleStatus').innerHTML = '';
       document.getElementById('childReportAnalysis').innerHTML = '';
-      loadChildReportOverview();
+      document.getElementById('childReportHistoryList').innerHTML = '';
+      loadChildReportHistory();
     }
 
     function closeChildReportModal() {
+      reportState.requestKey += 1;
+      reportState.selectionToken += 1;
+      reportState.childId = null;
       document.getElementById('childReportModal').style.display = 'none';
     }
 
@@ -1443,12 +1850,17 @@ $csrfToken = Helper::generateCsrfToken();
         return 'Not available';
       }
 
-      const date = new Date(value.replace(' ', 'T'));
+      const normalized = String(value).includes('T') ? String(value) : String(value).replace(' ', 'T');
+      const date = new Date(normalized);
       if (Number.isNaN(date.getTime())) {
         return value;
       }
 
-      return date.toLocaleString();
+      try {
+        return date.toLocaleString(undefined, { timeZone: APP_TIMEZONE });
+      } catch (error) {
+        return date.toLocaleString();
+      }
     }
 
     function populateManageChildModal(child) {
@@ -1599,21 +2011,26 @@ $csrfToken = Helper::generateCsrfToken();
         return '';
       }
 
-      const date = new Date(value.replace(' ', 'T'));
+      const normalized = String(value).includes('T') ? String(value) : String(value).replace(' ', 'T');
+      const date = new Date(normalized);
       if (Number.isNaN(date.getTime())) {
         return value;
       }
 
-      return date.toLocaleString();
+      try {
+        return date.toLocaleString(undefined, { timeZone: APP_TIMEZONE });
+      } catch (error) {
+        return date.toLocaleString();
+      }
     }
 
     function renderReportSummary(report) {
-      const summary = report.summary;
+      const summary = report.summary || {};
       document.getElementById('childReportSummary').innerHTML = [
         {
           label: 'Active Days',
           value: summary.active_days,
-          note: `In the last ${report.days} days`
+          note: `${report.days} day span`
         },
         {
           label: 'Logins',
@@ -1623,7 +2040,7 @@ $csrfToken = Helper::generateCsrfToken();
         {
           label: 'Messages',
           value: summary.total_child_messages,
-          note: `${summary.total_assistant_messages} assistant replies`
+          note: `${summary.total_assistant_messages || 0} assistant replies`
         },
         {
           label: 'Conversations',
@@ -1633,7 +2050,7 @@ $csrfToken = Helper::generateCsrfToken();
         {
           label: 'Online Minutes',
           value: summary.total_minutes,
-          note: `Avg ${summary.average_minutes_per_active_day} min on active days`
+          note: `Avg ${summary.average_minutes_per_active_day || 0} min on active days`
         }
       ].map(item => `
         <article class="report-stat-card">
@@ -1678,11 +2095,11 @@ $csrfToken = Helper::generateCsrfToken();
     }
 
     function renderReportChart() {
-      if (!reportState.overview) {
+      if (!reportState.activeSnapshot) {
         return;
       }
 
-      const series = Array.isArray(reportState.overview.series) ? reportState.overview.series : [];
+      const series = Array.isArray(reportState.activeSnapshot.series) ? reportState.activeSnapshot.series : [];
       const metric = reportState.metric;
       const values = series.map(day => Number(day[metric] || 0));
       const maxValue = Math.max(...values, 1);
@@ -1703,21 +2120,18 @@ $csrfToken = Helper::generateCsrfToken();
     }
 
     function renderContentReadiness(readiness) {
-      if (!readiness) {
-        return;
-      }
-
-      document.getElementById('childReportSampleStatus').innerHTML = `
-        <strong>${readiness.eligible ? 'Ready for analysis' : 'More chat data needed'}</strong><br>
-        ${escapeHtml(readiness.reason)}<br>
-        Current sample: ${formatNumber(readiness.message_count)} child messages, ${formatNumber(readiness.character_count)} characters, ${formatNumber(readiness.active_days)} active day(s).
-      `;
-
-      document.getElementById('generateContentReportBtn').disabled = !readiness.eligible;
+      document.getElementById('childReportSampleStatus').innerHTML = readiness ? `
+        <strong>${escapeHtml(readiness.message_count === 0 ? 'No recent child messages' : (readiness.recommended_sample_met ? 'Stronger sample' : 'Limited sample'))}</strong><br>
+        ${formatNumber(readiness.message_count)} child messages · ${formatNumber(readiness.character_count)} characters · ${formatNumber(readiness.active_days)} active day(s)
+      ` : '';
     }
 
     function riskClassFromAnalysis(analysis) {
-      const levels = (analysis.alerts || []).map(item => item.level);
+      const riskDimensions = Array.isArray(analysis.risk_dimensions) ? analysis.risk_dimensions : [];
+      const levels = [
+        ...(analysis.alerts || []).map(item => item.level),
+        ...riskDimensions.map(item => item.level)
+      ];
       if (levels.includes('high')) {
         return 'high';
       }
@@ -1727,9 +2141,9 @@ $csrfToken = Helper::generateCsrfToken();
       return 'low';
     }
 
-    function renderAnalysisList(items) {
+    function renderAnalysisList(items, emptyText = 'No recent items detected.') {
       if (!Array.isArray(items) || items.length === 0) {
-        return '<div class="report-list-item">No recent items detected.</div>';
+        return `<div class="report-list-item">${escapeHtml(emptyText)}</div>`;
       }
 
       return items.map(item => {
@@ -1741,6 +2155,126 @@ $csrfToken = Helper::generateCsrfToken();
       }).join('');
     }
 
+    function renderRiskDimensionList(items, emptyText) {
+      if (!Array.isArray(items) || items.length === 0) {
+        return `<div class="report-list-item">${escapeHtml(emptyText)}</div>`;
+      }
+
+      return items.map(item => `
+        <div class="report-list-item">
+          <strong>${escapeHtml(item.name || 'Signal')}</strong>
+          <span class="report-inline-level ${escapeHtml(item.level || 'low')}">${escapeHtml(item.level || 'low')}</span><br>
+          ${escapeHtml(item.summary || '')}<br>
+          ${(item.evidence || item.why_it_matters) ? `<span class="report-helper-text">${escapeHtml(item.evidence || item.why_it_matters || '')}</span>` : ''}
+          ${item.parent_action ? `<div class="report-helper-text" style="margin-top:8px;"><strong>Parent action:</strong> ${escapeHtml(item.parent_action)}</div>` : ''}
+        </div>
+      `).join('');
+    }
+
+    function buildSelectedReportMeta() {
+      if (reportState.activeSource === 'saved' && reportState.activeRecord) {
+        const generatedAt = reportState.activeRecord.created_at
+          ? formatReportDate(reportState.activeRecord.created_at)
+          : 'Unknown time';
+        const updatedHint = reportState.activeRecord.generation_mode === 'manual'
+          && reportState.activeRecord.updated_at
+          && reportState.activeRecord.updated_at !== reportState.activeRecord.created_at
+          ? ' · updated'
+          : '';
+        return `${reportState.activeRecord.generation_mode === 'auto' ? 'Auto' : 'Manual'} report · ${generatedAt}${updatedHint}`;
+      }
+
+      if (reportState.activeSource === 'trend' && reportState.trendAnalysis) {
+        return `${reportState.trendAnalysis.selected_report_count || 0} report(s) selected`;
+      }
+
+      return 'No report selected';
+    }
+
+    function updateActiveHistorySelection() {
+      document.querySelectorAll('[data-report-history-id]').forEach(item => {
+        const reportId = Number(item.dataset.reportHistoryId);
+        item.classList.toggle(
+          'active',
+          !reportState.selectionMode
+            && reportState.activeSource === 'saved'
+            && Number(reportState.activeRecord && reportState.activeRecord.id) === reportId
+        );
+        item.classList.toggle(
+          'selected',
+          reportState.selectionMode && reportState.selectedReportIds.includes(reportId)
+        );
+      });
+    }
+
+    function renderHistoryList() {
+      const container = document.getElementById('childReportHistoryList');
+
+      if (!Array.isArray(reportState.history) || reportState.history.length === 0) {
+        container.innerHTML = '<div class="report-helper-text">No saved reports yet.</div>';
+        updateActiveHistorySelection();
+        return;
+      }
+
+      container.innerHTML = reportState.history.map(item => {
+        const updatedLabel = item.generation_mode === 'manual'
+          && item.updated_at
+          && item.updated_at !== item.created_at
+          ? `Updated ${formatReportDate(item.updated_at)}`
+          : formatReportDate(item.created_at) || 'Unknown time';
+        const scopeLabel = item.scope_started_at && item.scope_ended_at
+          ? `${formatDate(item.scope_started_at)} - ${formatDate(item.scope_ended_at)}`
+          : `${item.window_days} day span`;
+        const inSelection = reportState.selectionMode;
+        const clickHandler = inSelection
+          ? `toggleTrendReportSelection(${item.id})`
+          : `openSavedReport(${item.id})`;
+
+        return `
+          <button
+            type="button"
+            class="report-history-item ${inSelection ? 'in-selection' : ''}"
+            data-report-history-id="${item.id}"
+            onclick="${clickHandler}"
+          >
+            <div class="report-history-row">
+              ${inSelection ? `<span class="report-history-check"><i class="fas fa-check"></i></span>` : ''}
+              <div class="report-history-body">
+                <span class="report-history-title">${escapeHtml(item.headline || `${item.generation_mode === 'auto' ? 'Auto' : 'Manual'} report`)}</span>
+                <span class="report-history-meta">
+                  ${escapeHtml(item.generation_mode === 'auto' ? 'Auto' : 'Manual')} ·
+                  ${escapeHtml(item.status === 'ready' ? 'ready' : 'limited data')} ·
+                  ${escapeHtml(item.risk_level || 'low')} risk ·
+                  ${escapeHtml(item.confidence || 'none')} confidence
+                </span>
+                <span class="report-history-meta">${escapeHtml(scopeLabel)}</span>
+                <span class="report-history-meta">${escapeHtml(updatedLabel)}</span>
+              </div>
+            </div>
+          </button>
+        `;
+      }).join('');
+
+      updateActiveHistorySelection();
+    }
+
+    function renderReportSettings() {
+      const settings = reportState.settings;
+      if (!settings) {
+        return;
+      }
+
+      document.getElementById('autoReportEnabled').checked = !!settings.auto_generate_enabled;
+      document.getElementById('autoReportFrequency').value = String(settings.auto_generate_frequency_days || 7);
+      document.getElementById('autoReportWindow').value = String(settings.auto_generate_window_days || 14);
+
+      const nextDue = settings.next_report_due_at ? formatReportDate(settings.next_report_due_at) : 'Not scheduled';
+      const lastGenerated = settings.last_report_generated_at ? formatReportDate(settings.last_report_generated_at) : 'Never';
+      document.getElementById('autoReportMeta').textContent = settings.auto_generate_enabled
+        ? `Every ${settings.auto_generate_frequency_days} day(s) · ${settings.auto_generate_window_days} day window · Next ${nextDue} · Last ${lastGenerated}`
+        : 'Auto generation is off.';
+    }
+
     function renderContentAnalysis(analysis, readiness) {
       const riskClass = riskClassFromAnalysis(analysis);
       const interests = Array.isArray(analysis.interests) ? analysis.interests : [];
@@ -1749,17 +2283,20 @@ $csrfToken = Helper::generateCsrfToken();
       const wellbeing = analysis.wellbeing || {};
       const guidance = Array.isArray(analysis.parent_guidance) ? analysis.parent_guidance : [];
       const alerts = Array.isArray(analysis.alerts) ? analysis.alerts : [];
+      const riskDimensions = Array.isArray(analysis.risk_dimensions) ? analysis.risk_dimensions : [];
+      const thinkingPatterns = Array.isArray(analysis.thinking_patterns) ? analysis.thinking_patterns : [];
+      const protectiveFactors = Array.isArray(analysis.protective_factors) ? analysis.protective_factors : [];
 
+      document.getElementById('selectedReportMeta').textContent = buildSelectedReportMeta();
       document.getElementById('childReportAnalysis').innerHTML = `
         <div class="report-analysis-grid">
           <article class="report-analysis-card full">
             <div class="report-risk-row">
               <span class="report-risk-badge ${riskClass}">${escapeHtml(riskClass)} risk</span>
-              <span class="report-helper-text">${escapeHtml(analysis.sample_confidence || readiness.confidence || 'low')} confidence sample</span>
-              <span class="report-helper-text">${escapeHtml(analysis.source === 'llm' ? 'Expanded analysis' : 'Rule-based analysis')}</span>
+              <span class="report-helper-text">${escapeHtml(analysis.sample_confidence || readiness.confidence || 'none')} confidence sample</span>
             </div>
-            <h4>${escapeHtml(analysis.headline || 'Recent content summary')}</h4>
-            <p>${escapeHtml(analysis.disclaimer || 'This report is a supportive summary of recent chat patterns, not a diagnosis.')}</p>
+            <h4>${escapeHtml(analysis.headline || 'Recent wellbeing summary')}</h4>
+            <p>${escapeHtml(analysis.disclaimer || 'This report summarizes recent patterns only and is not a diagnosis.')}</p>
           </article>
 
           <article class="report-analysis-card">
@@ -1770,12 +2307,13 @@ $csrfToken = Helper::generateCsrfToken();
           <article class="report-analysis-card">
             <h4>Emotional Snapshot</h4>
             <p>${escapeHtml(emotional.summary || 'No emotional summary available.')}</p>
+            ${renderAnalysisList(Array.isArray(emotional.supporting_signals) ? emotional.supporting_signals : [], 'No supporting signals available.')}
           </article>
 
           <article class="report-analysis-card">
-            <h4>Recent Topics</h4>
+            <h4>Recent Themes</h4>
             <div class="report-tag-list">
-              ${topics.length > 0 ? topics.map(item => `<span class="report-tag">${escapeHtml(item.name || 'Topic')}</span>`).join('') : '<span class="report-helper-text">No clear repeated topics yet.</span>'}
+              ${topics.length > 0 ? topics.map(item => `<span class="report-tag">${escapeHtml(item.name || 'Theme')}</span>`).join('') : '<span class="report-helper-text">No clear repeated themes yet.</span>'}
             </div>
           </article>
 
@@ -1786,6 +2324,21 @@ $csrfToken = Helper::generateCsrfToken();
             </div>
           </article>
 
+          <article class="report-analysis-card full">
+            <h4>Risk Dimensions</h4>
+            ${renderRiskDimensionList(riskDimensions, 'No major risk dimension stands out in this sample.')}
+          </article>
+
+          <article class="report-analysis-card">
+            <h4>Thinking Patterns</h4>
+            ${renderRiskDimensionList(thinkingPatterns, 'No strong rigid or conflict-focused thinking pattern stands out in this sample.')}
+          </article>
+
+          <article class="report-analysis-card">
+            <h4>Protective Factors</h4>
+            ${renderAnalysisList(protectiveFactors, 'No clear protective factor was visible in chat alone.')}
+          </article>
+
           <article class="report-analysis-card">
             <h4>Wellbeing Signals</h4>
             <p>${escapeHtml(wellbeing.summary || 'No wellbeing summary available.')}</p>
@@ -1793,77 +2346,334 @@ $csrfToken = Helper::generateCsrfToken();
 
           <article class="report-analysis-card">
             <h4>Strengths / Positives</h4>
-            ${renderAnalysisList(Array.isArray(wellbeing.strengths) ? wellbeing.strengths : [])}
+            ${renderAnalysisList(Array.isArray(wellbeing.strengths) ? wellbeing.strengths : [], 'No clear strengths were extracted from this sample.')}
           </article>
 
           <article class="report-analysis-card">
             <h4>Watch Points</h4>
-            ${renderAnalysisList(Array.isArray(wellbeing.watch_points) ? wellbeing.watch_points : [])}
+            ${renderAnalysisList(Array.isArray(wellbeing.watch_points) ? wellbeing.watch_points : [], 'No specific watch point was extracted from this sample.')}
           </article>
 
           <article class="report-analysis-card full">
             <h4>Parent Guidance</h4>
-            ${renderAnalysisList(guidance)}
+            ${renderAnalysisList(guidance, 'No parent guidance available.')}
           </article>
 
           <article class="report-analysis-card full">
             <h4>Alerts</h4>
-            ${alerts.length > 0 ? renderAnalysisList(alerts.map(item => `${(item.level || 'low').toUpperCase()}: ${item.title || 'Alert'} - ${item.detail || ''}`)) : '<div class="report-list-item">No urgent language alerts were found in the recent sample.</div>'}
+            ${alerts.length > 0 ? renderAnalysisList(alerts.map(item => `${(item.level || 'low').toUpperCase()}: ${item.title || 'Alert'} - ${item.detail || ''}`), 'No alerts.') : '<div class="report-list-item">No medium or high-priority alert was extracted from this sample.</div>'}
           </article>
         </div>
       `;
     }
 
-    async function loadChildReportOverview() {
-      if (!reportState.childId) {
+    function renderTrendAnalysis(analysis) {
+      const trajectory = analysis.risk_trajectory || {};
+      const engagement = analysis.engagement || {};
+      const riskLevel = trajectory.level || 'low';
+
+      document.getElementById('selectedReportMeta').textContent = buildSelectedReportMeta();
+      document.getElementById('childReportSampleStatus').innerHTML = `
+        <strong>${formatNumber(analysis.selected_report_count || 0)} report(s) selected</strong><br>
+        ${formatNumber(engagement.child_message_count || 0)} child messages · ${formatNumber(engagement.active_days || 0)} active day(s)
+      `;
+      document.getElementById('childReportAnalysis').innerHTML = `
+        <div class="report-analysis-grid">
+          <article class="report-analysis-card full">
+            <div class="report-risk-row">
+              <span class="report-risk-badge ${escapeHtml(riskLevel)}">${escapeHtml(riskLevel)} risk</span>
+              <span class="report-helper-text">${escapeHtml(trajectory.direction || 'stable')}</span>
+            </div>
+            <h4>${escapeHtml(analysis.headline || 'Cumulative analysis')}</h4>
+            <p>${escapeHtml(analysis.summary || 'No summary available.')}</p>
+          </article>
+
+          <article class="report-analysis-card">
+            <h4>Period</h4>
+            <p>${escapeHtml(
+              analysis.date_span && analysis.date_span.start && analysis.date_span.end
+                ? `${formatReportDate(analysis.date_span.start)} to ${formatReportDate(analysis.date_span.end)}`
+                : 'Not available'
+            )}</p>
+          </article>
+
+          <article class="report-analysis-card">
+            <h4>Engagement</h4>
+            <p>${escapeHtml(engagement.summary || 'No engagement summary available.')}</p>
+          </article>
+
+          <article class="report-analysis-card full">
+            <h4>Recurring Risks</h4>
+            ${renderRiskDimensionList(analysis.recurring_risks || [], 'No recurring risk pattern stood out across the selected reports.')}
+          </article>
+
+          <article class="report-analysis-card">
+            <h4>Thinking Trends</h4>
+            ${renderRiskDimensionList(analysis.thinking_trends || [], 'No recurring thinking pattern stood out across the selected reports.')}
+          </article>
+
+          <article class="report-analysis-card">
+            <h4>Protective Trends</h4>
+            ${renderAnalysisList(analysis.protective_trends || [], 'No recurring protective factor stood out across the selected reports.')}
+          </article>
+
+          <article class="report-analysis-card">
+            <h4>Topic Trends</h4>
+            ${renderAnalysisList(analysis.topic_trends || [], 'No recurring topic stood out across the selected reports.')}
+          </article>
+
+          <article class="report-analysis-card full">
+            <h4>Parent Guidance</h4>
+            ${renderAnalysisList(analysis.parent_guidance || [], 'No parent guidance available.')}
+          </article>
+        </div>
+      `;
+    }
+
+    function renderReportEmptyState() {
+      document.getElementById('childReportLoading').style.display = 'none';
+      document.getElementById('childReportContent').style.display = 'grid';
+      document.getElementById('childReportSummary').innerHTML = '';
+      document.getElementById('childReportInsights').innerHTML = '<div class="report-empty-state">No saved report yet.</div>';
+      document.getElementById('childReportChart').innerHTML = '<div class="report-empty-state">Generate a report to save today&apos;s snapshot and retain its internal message scope for later cumulative analysis.</div>';
+      document.getElementById('childReportSampleStatus').innerHTML = '';
+      document.getElementById('childReportAnalysis').innerHTML = '<div class="report-empty-state">Saved reports will appear on the left. Re-generating on the same day updates today&apos;s manual report instead of creating a duplicate.</div>';
+      document.getElementById('selectedReportMeta').textContent = 'No report selected';
+      updateActiveHistorySelection();
+    }
+
+    function renderTrendOverview(analysis) {
+      const engagement = analysis.engagement || {};
+      document.getElementById('childReportSummary').innerHTML = [
+        {
+          label: 'Reports',
+          value: analysis.selected_report_count || 0,
+          note: 'Selected for trend analysis'
+        },
+        {
+          label: 'Child Messages',
+          value: engagement.child_message_count || 0,
+          note: 'Distinct retained messages'
+        },
+        {
+          label: 'Active Days',
+          value: engagement.active_days || 0,
+          note: 'Across selected reports'
+        },
+        {
+          label: 'Manual',
+          value: engagement.manual_reports || 0,
+          note: 'Manual reports'
+        },
+        {
+          label: 'Auto',
+          value: engagement.auto_reports || 0,
+          note: 'Auto reports'
+        }
+      ].map(item => `
+        <article class="report-stat-card">
+          <span class="report-stat-label">${item.label}</span>
+          <span class="report-stat-value">${formatNumber(item.value)}</span>
+          <span class="report-stat-note">${escapeHtml(item.note)}</span>
+        </article>
+      `).join('');
+
+      const periodText = analysis.date_span && analysis.date_span.start && analysis.date_span.end
+        ? `${formatReportDate(analysis.date_span.start)} to ${formatReportDate(analysis.date_span.end)}`
+        : 'Not available';
+
+      document.getElementById('childReportInsights').innerHTML = [
+        periodText,
+        analysis.summary || 'No summary available.'
+      ].map(item => `<div class="report-insight-pill">${escapeHtml(item)}</div>`).join('');
+
+      document.getElementById('childReportChart').innerHTML = '<div class="report-empty-state">Trend analysis is based on selected saved reports rather than one single day-by-day activity chart.</div>';
+    }
+
+    function renderActiveSnapshot() {
+      if (reportState.activeSource === 'trend' && reportState.trendAnalysis) {
+        document.getElementById('childReportLoading').style.display = 'none';
+        document.getElementById('childReportContent').style.display = 'grid';
+        renderTrendOverview(reportState.trendAnalysis);
+        renderTrendAnalysis(reportState.trendAnalysis);
+        updateActiveHistorySelection();
         return;
       }
 
-      document.getElementById('childReportLoading').style.display = 'block';
-      document.getElementById('childReportContent').style.display = 'none';
+      if (!reportState.activeSnapshot) {
+        renderReportEmptyState();
+        return;
+      }
+
+      document.getElementById('childReportLoading').style.display = 'none';
+      document.getElementById('childReportContent').style.display = 'grid';
+      renderReportSummary(reportState.activeSnapshot);
+      renderReportInsights(reportState.activeSnapshot);
+      renderReportChart();
+      if (reportState.activeSource === 'trend' && reportState.trendAnalysis) {
+        renderTrendAnalysis(reportState.trendAnalysis);
+      } else {
+        renderContentReadiness(reportState.activeSnapshot.content_readiness || null);
+        renderContentAnalysis(reportState.activeSnapshot.analysis || {}, reportState.activeSnapshot.content_readiness || {});
+      }
+      updateActiveHistorySelection();
+    }
+
+    function maybeInitializeReportSelection() {
+      if (reportState.initializedSelection || !reportState.historyLoaded) {
+        return;
+      }
+
+      reportState.initializedSelection = true;
+      if (Array.isArray(reportState.history) && reportState.history.length > 0) {
+        openSavedReport(reportState.history[0].id);
+      } else {
+        renderReportEmptyState();
+      }
+    }
+
+    async function loadChildReportHistory(requestKey = reportState.requestKey) {
+      const childId = reportState.childId;
+      if (!childId) {
+        return;
+      }
 
       try {
-        const response = await fetch(`${CHILD_REPORT_API_URL}?child_id=${encodeURIComponent(reportState.childId)}&days=${encodeURIComponent(reportState.days)}`, {
+        const response = await fetch(`${CHILD_REPORT_HISTORY_API_URL}?child_id=${encodeURIComponent(childId)}`, {
           headers: {
             'Accept': 'application/json'
           }
         });
 
         const result = await response.json();
+        if (!isActiveReportRequest(requestKey, childId)) {
+          return;
+        }
+
         if (!response.ok || !result.success) {
-          throw new Error(result.error || result.message || 'Failed to load report');
+          throw new Error(result.error || result.message || 'Failed to load report history');
         }
 
-        reportState.overview = result.report;
-        document.getElementById('childReportLoading').style.display = 'none';
-        document.getElementById('childReportContent').style.display = 'flex';
-        document.getElementById('reportGeneratedHint').textContent = `Showing the most recent ${reportState.days} days of login, chat, and usage activity.`;
-        renderReportSummary(result.report);
-        renderReportInsights(result.report);
-        renderReportChart();
-        renderContentReadiness(result.report.content_readiness);
-
-        const cacheKey = `${reportState.childId}:${reportState.days}`;
-        if (reportState.contentCache[cacheKey]) {
-          renderContentAnalysis(reportState.contentCache[cacheKey], result.report.content_readiness);
-        } else {
-          document.getElementById('childReportAnalysis').innerHTML = `
-            <div class="report-analysis-card full">
-              <h4>Content Analysis</h4>
-              <p>Generate a content report to see recent topics, interests, emotional patterns, and parent guidance based on the selected date range.</p>
-            </div>
-          `;
-        }
+        reportState.settings = result.settings;
+        reportState.history = Array.isArray(result.reports) ? result.reports : [];
+        reportState.historyLoaded = true;
+        reportState.selectedReportIds = reportState.history.map(item => Number(item.id));
+        renderReportSettings();
+        updateTrendSelectionMeta();
+        renderHistoryList();
+        maybeInitializeReportSelection();
       } catch (error) {
+        if (!isActiveReportRequest(requestKey, childId)) {
+          return;
+        }
+
         console.error(error);
-        document.getElementById('childReportLoading').style.display = 'none';
-        document.getElementById('childReportContent').style.display = 'none';
-        showPageAlert(error.message || 'Failed to load child report.', 'error');
+        showPageAlert(error.message || 'Failed to load report history.', 'error');
+      }
+    }
+
+    async function openSavedReport(reportId) {
+      const childId = reportState.childId;
+      const requestKey = reportState.requestKey;
+      if (!childId || !reportId) {
+        return;
+      }
+
+      if (reportState.selectionMode) {
+        toggleTrendReportSelection(reportId);
+        return;
+      }
+
+      const selectionToken = beginReportSelection();
+
+      try {
+        const response = await fetch(`${CHILD_REPORT_ITEM_API_URL}?child_id=${encodeURIComponent(childId)}&report_id=${encodeURIComponent(reportId)}`, {
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+
+        const result = await response.json();
+        if (!isActiveReportSelection(requestKey, childId, selectionToken)) {
+          return;
+        }
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || result.message || 'Failed to load saved report');
+        }
+
+        reportState.activeSource = 'saved';
+        reportState.trendAnalysis = null;
+        reportState.activeSnapshot = result.report;
+        reportState.activeRecord = result.report_record;
+        document.getElementById('reportGeneratedHint').textContent = 'Saved report opened.';
+        renderActiveSnapshot();
+      } catch (error) {
+        if (!isActiveReportSelection(requestKey, childId, selectionToken)) {
+          return;
+        }
+
+        console.error(error);
+        showPageAlert(error.message || 'Failed to load saved report.', 'error');
+      }
+    }
+
+    async function saveReportSettings() {
+      const childId = reportState.childId;
+      const requestKey = reportState.requestKey;
+      if (!childId) {
+        return;
+      }
+
+      const button = document.getElementById('saveReportSettingsBtn');
+      button.disabled = true;
+      button.textContent = 'Saving...';
+
+      const formData = new FormData();
+      formData.append('csrf_token', CSRF_TOKEN);
+      formData.append('child_id', childId);
+      formData.append('auto_generate_enabled', document.getElementById('autoReportEnabled').checked ? '1' : '0');
+      formData.append('auto_generate_frequency_days', document.getElementById('autoReportFrequency').value);
+      formData.append('auto_generate_window_days', document.getElementById('autoReportWindow').value);
+
+      try {
+        const response = await fetch(CHILD_REPORT_SETTINGS_API_URL, {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await response.json();
+        if (!isActiveReportRequest(requestKey, childId)) {
+          return;
+        }
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || result.message || 'Failed to save report settings');
+        }
+
+        reportState.settings = result.settings;
+        renderReportSettings();
+        await loadChildReportHistory();
+        showPageAlert(result.message || 'Report settings saved.', 'success');
+      } catch (error) {
+        if (!isActiveReportRequest(requestKey, childId)) {
+          return;
+        }
+
+        console.error(error);
+        showPageAlert(error.message || 'Failed to save report settings.', 'error');
+      } finally {
+        if (isActiveReportRequest(requestKey, childId)) {
+          button.disabled = false;
+          button.textContent = 'Save Schedule';
+        }
       }
     }
 
     async function generateContentReport() {
-      if (!reportState.childId || !reportState.overview || !reportState.overview.content_readiness || !reportState.overview.content_readiness.eligible) {
+      const childId = reportState.childId;
+      const requestKey = reportState.requestKey;
+      if (!childId) {
         return;
       }
 
@@ -1873,8 +2683,9 @@ $csrfToken = Helper::generateCsrfToken();
 
       const formData = new FormData();
       formData.append('csrf_token', CSRF_TOKEN);
-      formData.append('child_id', reportState.childId);
-      formData.append('days', reportState.days);
+      formData.append('child_id', childId);
+
+      const selectionToken = beginReportSelection();
 
       try {
         const response = await fetch(CHILD_REPORT_CONTENT_API_URL, {
@@ -1883,19 +2694,101 @@ $csrfToken = Helper::generateCsrfToken();
         });
 
         const result = await response.json();
-        if (!response.ok || !result.success) {
-          throw new Error(result.error || result.message || 'Failed to generate content analysis');
+        if (!isActiveReportSelection(requestKey, childId, selectionToken)) {
+          return;
         }
 
-        const cacheKey = `${reportState.childId}:${reportState.days}`;
-        reportState.contentCache[cacheKey] = result.analysis;
-        renderContentAnalysis(result.analysis, result.content_readiness);
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || result.message || 'Failed to generate report');
+        }
+
+        reportState.history = Array.isArray(result.reports) ? result.reports : reportState.history;
+        reportState.settings = result.settings || reportState.settings;
+        reportState.selectedReportIds = reportState.history.map(item => Number(item.id));
+        reportState.activeSource = 'saved';
+        reportState.trendAnalysis = null;
+        reportState.activeSnapshot = result.report;
+        reportState.activeRecord = result.report_record;
+        renderReportSettings();
+        updateTrendSelectionMeta();
+        renderHistoryList();
+        renderActiveSnapshot();
+        document.getElementById('reportGeneratedHint').textContent = result.updated_existing
+          ? "Today's manual report updated."
+          : 'A new manual report was saved.';
+        showPageAlert(result.message || 'Report generated successfully.', 'success');
       } catch (error) {
+        if (!isActiveReportSelection(requestKey, childId, selectionToken)) {
+          return;
+        }
+
         console.error(error);
-        showPageAlert(error.message || 'Failed to generate content analysis.', 'error');
+        showPageAlert(error.message || 'Failed to generate report.', 'error');
       } finally {
-        button.disabled = !(reportState.overview && reportState.overview.content_readiness && reportState.overview.content_readiness.eligible);
-        button.textContent = 'Generate Analysis';
+        if (isActiveReportRequest(requestKey, childId)) {
+          button.disabled = false;
+          button.textContent = 'Generate Now';
+        }
+      }
+    }
+
+    async function generateTrendAnalysis() {
+      const childId = reportState.childId;
+      const requestKey = reportState.requestKey;
+      const selectedIds = [...reportState.selectedReportIds];
+      if (!childId) {
+        return;
+      }
+
+      if (selectedIds.length === 0) {
+        showPageAlert('Select at least one saved report.', 'error');
+        return;
+      }
+
+      const button = document.getElementById('runTrendAnalysisBtn');
+      button.disabled = true;
+      button.textContent = 'Analyzing...';
+
+      const formData = new FormData();
+      formData.append('csrf_token', CSRF_TOKEN);
+      formData.append('child_id', childId);
+      selectedIds.forEach(id => formData.append('report_ids[]', String(id)));
+
+      const selectionToken = beginReportSelection();
+
+      try {
+        const response = await fetch(CHILD_REPORT_TREND_API_URL, {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await response.json();
+        if (!isActiveReportSelection(requestKey, childId, selectionToken)) {
+          return;
+        }
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || result.message || 'Failed to analyze selected reports');
+        }
+
+        reportState.activeSource = 'trend';
+        reportState.activeSnapshot = null;
+        reportState.activeRecord = null;
+        reportState.trendAnalysis = result.analysis || null;
+        document.getElementById('reportGeneratedHint').textContent = 'Cumulative analysis loaded.';
+        renderActiveSnapshot();
+      } catch (error) {
+        if (!isActiveReportSelection(requestKey, childId, selectionToken)) {
+          return;
+        }
+
+        console.error(error);
+        showPageAlert(error.message || 'Failed to analyze selected reports.', 'error');
+      } finally {
+        if (isActiveReportRequest(requestKey, childId)) {
+          button.disabled = false;
+          button.textContent = 'Analyze Selected';
+        }
       }
     }
 
@@ -2202,19 +3095,6 @@ $csrfToken = Helper::generateCsrfToken();
       }
     });
 
-    document.querySelectorAll('[data-report-range]').forEach(button => {
-      button.addEventListener('click', () => {
-        const nextDays = Number(button.dataset.reportRange);
-        if (!nextDays || reportState.days === nextDays) {
-          return;
-        }
-
-        reportState.days = nextDays;
-        document.querySelectorAll('[data-report-range]').forEach(item => item.classList.toggle('active', item === button));
-        loadChildReportOverview();
-      });
-    });
-
     document.querySelectorAll('[data-report-metric]').forEach(button => {
       button.addEventListener('click', () => {
         const nextMetric = button.dataset.reportMetric;
@@ -2224,8 +3104,14 @@ $csrfToken = Helper::generateCsrfToken();
 
         reportState.metric = nextMetric;
         document.querySelectorAll('[data-report-metric]').forEach(item => item.classList.toggle('active', item === button));
-        renderReportChart();
+        if (reportState.activeSource === 'saved') {
+          renderReportChart();
+        }
       });
+    });
+
+    document.getElementById('saveReportSettingsBtn').addEventListener('click', () => {
+      saveReportSettings();
     });
 
     const childNameInput = document.getElementById('child_name');

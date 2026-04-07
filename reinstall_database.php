@@ -39,6 +39,7 @@ function getMigrationFiles(): array
             'CreateChildDailyUsageTable' => 30,
             'CreateChildDailyLoginsTable' => 35,
             'CreateConversationsTable' => 40,
+            'CreateChildReportsTables' => 45,
             'CreateKnowledgeBaseTables' => 50,
         ];
 

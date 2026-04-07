@@ -585,7 +585,7 @@ include("connect.php");
                 noChats: '暂无对话',
                 deleteConfirm: '确定要删除这个对话吗？',
                 sessionLeft: '今日剩余 {minutes} 分钟',
-                sessionWindow: '已用 {used}/{total} 分钟 · 时段 {start}-{end}',
+                sessionWindow: '已用 {used}/{total} 分钟 · 时段 {start}-{end} · 服务器 {current_time} ({timezone})',
                 sessionEndedTitle: '本次使用已结束',
                 sessionEndedText: '可用时段已结束或家长已暂停登录，正在返回登录页。'
             },
@@ -620,7 +620,7 @@ include("connect.php");
                 noChats: 'No chats yet',
                 deleteConfirm: 'Are you sure you want to delete this chat?',
                 sessionLeft: '{minutes} min left today',
-                sessionWindow: 'Used {used}/{total} min · Window {start}-{end}',
+                sessionWindow: 'Used {used}/{total} min · Window {start}-{end} · Server {current_time} ({timezone})',
                 sessionEndedTitle: 'Session ended',
                 sessionEndedText: 'Your access window has ended or a parent paused login. Redirecting to sign in...'
             }
@@ -662,6 +662,7 @@ include("connect.php");
         let childSessionInterval = null;
         let childSessionLogoutTimer = null;
         let childSessionLocked = false;
+        let latestChildSessionStatus = null;
 
 
         // Update all UI text elements
@@ -669,6 +670,7 @@ include("connect.php");
             document.getElementById('chat-title').textContent = t('chatTitle');
             document.querySelector('.header-caption').textContent = t('headerCaption');
             document.querySelector('.session-status-label').textContent = t('todayTime');
+            document.getElementById('child-session-remaining').textContent = t('loadingUsage');
             document.getElementById('message-input').placeholder = t('messagePlaceholder');
             document.getElementById('send-btn').textContent = t('send');
             document.getElementById('stop-btn').textContent = t('stop');
@@ -686,6 +688,10 @@ include("connect.php");
 
             // Re-render chat list with updated language
             renderChatList();
+
+            if (latestChildSessionStatus) {
+                renderChildSessionStatus(latestChildSessionStatus);
+            }
 
             checkSecurityContext();
         }
@@ -726,7 +732,9 @@ include("connect.php");
                 .replace('{used}', status.used_today_minutes)
                 .replace('{total}', status.daily_login_minutes)
                 .replace('{start}', status.allowed_login_start)
-                .replace('{end}', status.allowed_login_end);
+                .replace('{end}', status.allowed_login_end)
+                .replace('{current_time}', status.server_time_display || '--:--')
+                .replace('{timezone}', status.server_timezone || 'server');
         }
 
         function clearChildSessionLogoutTimer() {
@@ -741,14 +749,17 @@ include("connect.php");
                 return null;
             }
 
-            const date = new Date(serverTime.replace(' ', 'T'));
+            const normalized = typeof serverTime === 'string' && serverTime.includes('T')
+                ? serverTime
+                : String(serverTime).replace(' ', 'T');
+            const date = new Date(normalized);
             return Number.isNaN(date.getTime()) ? null : date;
         }
 
         function scheduleChildSessionLogout(status) {
             clearChildSessionLogoutTimer();
 
-            const serverTime = parseServerDateTime(status.server_time);
+            const serverTime = parseServerDateTime(status.server_time_iso || status.server_time);
             if (!serverTime) {
                 return;
             }
@@ -763,6 +774,10 @@ include("connect.php");
                 const [hour, minute] = status.allowed_login_end.split(':').map(value => parseInt(value, 10) || 0);
                 const endTime = new Date(serverTime);
                 endTime.setHours(hour, minute, 0, 0);
+
+                if (status.spans_overnight && endTime <= serverTime) {
+                    endTime.setDate(endTime.getDate() + 1);
+                }
 
                 const msUntilEnd = endTime.getTime() - serverTime.getTime();
                 if (msUntilEnd > 0) {
@@ -829,6 +844,7 @@ include("connect.php");
                     return;
                 }
 
+                latestChildSessionStatus = result.status;
                 renderChildSessionStatus(result.status);
                 scheduleChildSessionLogout(result.status);
             } catch (error) {

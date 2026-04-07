@@ -201,10 +201,11 @@ class Helper
             session_start();
         }
 
-        // Generate a random token
-        $token = bin2hex(random_bytes(32));
+        if (!empty($_SESSION['csrf_token']) && is_string($_SESSION['csrf_token'])) {
+            return $_SESSION['csrf_token'];
+        }
 
-        // Store it in session
+        $token = bin2hex(random_bytes(32));
         $_SESSION['csrf_token'] = $token;
 
         return $token;

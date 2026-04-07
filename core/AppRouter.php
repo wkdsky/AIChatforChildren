@@ -347,11 +347,39 @@ class AppRouter
             $controller->overview();
         });
 
+        $router->get('/api/parent/children/report/history', function () {
+            Middleware::requireAuth();
+            Middleware::requireParent();
+            $controller = new ParentChildReportController();
+            $controller->history();
+        });
+
+        $router->get('/api/parent/children/report/item', function () {
+            Middleware::requireAuth();
+            Middleware::requireParent();
+            $controller = new ParentChildReportController();
+            $controller->item();
+        });
+
         $router->post('/api/parent/children/report/content', function () {
             Middleware::requireAuth();
             Middleware::requireParent();
             $controller = new ParentChildReportController();
             $controller->content();
+        });
+
+        $router->post('/api/parent/children/report/settings', function () {
+            Middleware::requireAuth();
+            Middleware::requireParent();
+            $controller = new ParentChildReportController();
+            $controller->settings();
+        });
+
+        $router->post('/api/parent/children/report/trend', function () {
+            Middleware::requireAuth();
+            Middleware::requireParent();
+            $controller = new ParentChildReportController();
+            $controller->trend();
         });
 
         $router->get('/api/child/session-status', function () {
