@@ -52,11 +52,11 @@ $email = $_SESSION['email'] ?? null;
                     <input type="hidden" name="identifier" value="<?= $email ?>">
                     <div class="input-group">
                         <input type="password" name="password" <?= Helper::oldValue("password", "New password") ?> required>
-                        <i class="fa fa-eye"></i>
+                        <button type="button" class="password-toggle" aria-label="Show password">Show</button>
                     </div>
                     <div class="input-group">
                         <input type="password" name="confirm_password" <?= Helper::oldValue("confirm_password", "Confirm password") ?> required>
-                        <i class="fa fa-eye"></i>
+                        <button type="button" class="password-toggle" aria-label="Show password">Show</button>
 
                     </div>
 
@@ -79,6 +79,7 @@ $email = $_SESSION['email'] ?? null;
             </div>
         </div>
     </div>
+    <script src="<?php echo Helper::url('assets/javascript/main.js'); ?>"></script>
 </body>
 
 </html>

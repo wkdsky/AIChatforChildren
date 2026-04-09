@@ -95,22 +95,19 @@ body {
     text-align: center;
 }
 
-.input-group .fa {
+.password-toggle {
     position: absolute;
     right: 1em;
     top: 50%;
     transform: translateY(-50%);
     cursor: pointer;
     color: #666;
-}
-
-.input-group .fa {
-    position: absolute;
-    right: 1em;
-    top: 50%;
-    transform: translateY(-50%);
-    cursor: pointer;
-    color: #666;
+    border: none;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 0;
 }
 
 .field-feedback {
@@ -131,7 +128,7 @@ body {
     color: #059669;
 }
 
-.input-group .fa.fa-eye-slash {
+.password-toggle.is-active {
     color: var(--primary-color)
 }
 

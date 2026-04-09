@@ -1,16 +1,10 @@
 <?php
-session_start();
-use Utils\Helper;
 
-// Load environment variables
-require_once __DIR__ . '/../../vendor/autoload.php';
-$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../..');
-$dotenv->load();
+use Utils\Helper;
 
 $user = $_SESSION['user'];
 $managedChildAccount = substr($user['email'], -12) === '@child.local';
 $csrfToken = Helper::generateCsrfToken();
-include("connect.php");
 ?>
 <!doctype html>
 <html lang="en">

@@ -80,6 +80,7 @@ class ParentChildReportController
             $this->jsonResponse([
                 'success' => true,
                 'settings' => $bundle['settings'],
+                'usage_report' => $bundle['usage_report'] ?? null,
                 'reports' => $bundle['reports'],
             ]);
         } catch (\RuntimeException $e) {
@@ -139,10 +140,16 @@ class ParentChildReportController
         }
 
         try {
+            $periodDays = $_POST['auto_generate_period_days']
+                ?? $_POST['auto_generate_frequency_days']
+                ?? $_POST['auto_generate_window_days']
+                ?? 7;
+
             $settings = $this->reportService->updateSettings($childId, $this->getParentId(), [
                 'auto_generate_enabled' => $_POST['auto_generate_enabled'] ?? '',
-                'auto_generate_frequency_days' => $_POST['auto_generate_frequency_days'] ?? 7,
-                'auto_generate_window_days' => $_POST['auto_generate_window_days'] ?? 14,
+                'auto_generate_period_days' => $periodDays,
+                'auto_generate_frequency_days' => $periodDays,
+                'auto_generate_window_days' => $periodDays,
             ]);
 
             $this->jsonResponse([
@@ -182,11 +189,21 @@ class ParentChildReportController
 
         try {
             $bundle = $this->reportService->generateAndStore($childId, $this->getParentId(), $days, 'manual');
+            if (empty($bundle['generated'])) {
+                $this->jsonResponse([
+                    'success' => false,
+                    'message' => $bundle['message'] ?? 'Not enough new child-authored chat has accumulated yet.',
+                    'report' => $bundle['report'] ?? null,
+                    'report_record' => $bundle['report_record'] ?? null,
+                    'settings' => $bundle['settings'] ?? null,
+                    'reports' => $bundle['reports'] ?? [],
+                    'updated_existing' => !empty($bundle['updated_existing']),
+                ], 422);
+            }
+
             $this->jsonResponse([
                 'success' => true,
-                'message' => !empty($bundle['updated_existing'])
-                    ? "Today's manual report updated."
-                    : 'Report generated successfully.',
+                'message' => 'Report generated successfully.',
                 'report' => $bundle['report'],
                 'report_record' => $bundle['report_record'],
                 'settings' => $bundle['settings'],
@@ -194,7 +211,11 @@ class ParentChildReportController
                 'updated_existing' => !empty($bundle['updated_existing']),
             ]);
         } catch (\RuntimeException $e) {
-            $status = $e->getMessage() === 'Child account not found.' ? 404 : 400;
+            $status = match ($e->getMessage()) {
+                'Child account not found.' => 404,
+                'AI report generation is currently unavailable.' => 503,
+                default => 400,
+            };
             $this->jsonResponse([
                 'success' => false,
                 'message' => $e->getMessage(),
@@ -240,7 +261,12 @@ class ParentChildReportController
                 'reports' => $bundle['reports'],
             ]);
         } catch (\RuntimeException $e) {
-            $status = in_array($e->getMessage(), ['Child account not found.', 'Select at least one saved report.'], true) ? 400 : 404;
+            $status = match ($e->getMessage()) {
+                'Child account not found.' => 404,
+                'Select at least one saved report.' => 400,
+                'AI trend analysis is currently unavailable.' => 503,
+                default => 400,
+            };
             $this->jsonResponse([
                 'success' => false,
                 'message' => $e->getMessage(),

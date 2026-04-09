@@ -19,9 +19,15 @@ class ChatController
         $port = Config::get('CHROMA_SERVICE_PORT', '4001');
 
         $this->knowledgeServiceUrl = "http://{$host}:{$port}";
-        $this->llmApiUrl = Config::get('LLM_API_URL', 'https://api.deepseek.com/v1/chat/completions');
-        $this->llmApiKey = Config::get('LLM_API_KEY', '');
-        $this->llmModel = Config::get('LLM_MODEL', 'deepseek-chat');
+        $this->llmApiUrl = trim((string) Config::get('LLM_API_URL', 'https://api.deepseek.com/v1/chat/completions'));
+        $this->llmApiKey = trim((string) Config::get('LLM_API_KEY', ''));
+        $this->llmModel = trim((string) Config::get('LLM_MODEL', 'deepseek-chat'));
+        if ($this->llmApiUrl === '') {
+            $this->llmApiUrl = 'https://api.deepseek.com/v1/chat/completions';
+        }
+        if ($this->llmModel === '') {
+            $this->llmModel = 'deepseek-chat';
+        }
     }
 
     public function reply(): void

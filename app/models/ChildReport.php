@@ -33,6 +33,20 @@ class ChildReport extends BaseModel
         }
     }
 
+    public function deleteOrphanedReportMessages(): int
+    {
+        $stmt = $this->pdo->prepare(
+            "DELETE crm
+            FROM child_report_messages crm
+            LEFT JOIN child_reports cr
+                ON cr.id = crm.report_id
+            WHERE cr.id IS NULL"
+        );
+        $stmt->execute();
+
+        return (int) $stmt->rowCount();
+    }
+
     public function getChildForParent(int $childId, int $parentId): ?array
     {
         $stmt = $this->pdo->prepare(
@@ -198,6 +212,40 @@ class ChildReport extends BaseModel
         return $report ?: null;
     }
 
+    public function deleteStoredReport(int $reportId, int $childId, int $parentId): bool
+    {
+        return $this->transaction(function () use ($reportId, $childId, $parentId) {
+            $deleteMessages = $this->pdo->prepare(
+                "DELETE crm
+                FROM child_report_messages crm
+                INNER JOIN child_reports cr
+                    ON cr.id = crm.report_id
+                WHERE cr.id = :report_id
+                    AND cr.child_id = :child_id
+                    AND cr.parent_id = :parent_id"
+            );
+            $deleteMessages->execute([
+                'report_id' => $reportId,
+                'child_id' => $childId,
+                'parent_id' => $parentId,
+            ]);
+
+            $deleteReport = $this->pdo->prepare(
+                "DELETE FROM child_reports
+                WHERE id = :report_id
+                    AND child_id = :child_id
+                    AND parent_id = :parent_id
+                LIMIT 1"
+            );
+
+            return $deleteReport->execute([
+                'report_id' => $reportId,
+                'child_id' => $childId,
+                'parent_id' => $parentId,
+            ]);
+        });
+    }
+
     public function getLatestStoredReport(int $childId, int $parentId): ?array
     {
         $stmt = $this->pdo->prepare(
@@ -211,6 +259,27 @@ class ChildReport extends BaseModel
         $stmt->execute([
             'child_id' => $childId,
             'parent_id' => $parentId,
+        ]);
+
+        $report = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $report ?: null;
+    }
+
+    public function getLatestStoredReportExcluding(int $childId, int $parentId, int $excludeReportId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT *
+            FROM child_reports
+            WHERE child_id = :child_id
+                AND parent_id = :parent_id
+                AND id <> :exclude_report_id
+            ORDER BY COALESCE(scope_ended_at, updated_at, created_at) DESC, id DESC
+            LIMIT 1"
+        );
+        $stmt->execute([
+            'child_id' => $childId,
+            'parent_id' => $parentId,
+            'exclude_report_id' => $excludeReportId,
         ]);
 
         $report = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -471,6 +540,37 @@ class ChildReport extends BaseModel
             'first_message_at' => $row['first_message_at'] ?? null,
             'last_message_at' => $row['last_message_at'] ?? null,
         ];
+    }
+
+    public function getRetainedMessagesForReports(int $childId, int $parentId, array $reportIds): array
+    {
+        $reportIds = array_values(array_unique(array_map('intval', $reportIds)));
+        if ($reportIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($reportIds), '?'));
+        $params = array_merge([$childId, $parentId], $reportIds);
+
+        $stmt = $this->pdo->prepare(
+            "SELECT
+                crm.report_id,
+                crm.message_id,
+                crm.conversation_id,
+                crm.role,
+                crm.content,
+                crm.created_at
+            FROM child_report_messages crm
+            INNER JOIN child_reports cr
+                ON cr.id = crm.report_id
+            WHERE cr.child_id = ?
+                AND cr.parent_id = ?
+                AND cr.id IN ({$placeholders})
+            ORDER BY crm.created_at ASC, crm.message_id ASC, crm.id ASC"
+        );
+        $stmt->execute($params);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
     public function getDueAutoReportChildren(?int $parentId = null, int $limit = 20): array

@@ -10,10 +10,47 @@ use DateTimeImmutable;
 class ChildReportService
 {
     private const ALLOWED_DAYS = [7, 14, 30];
+    private const REPORT_REQUIRED_KEYS = [
+        'headline',
+        'sample_confidence',
+        'disclaimer',
+        'topic_overview',
+        'topics',
+        'interests',
+        'emotional_overview',
+        'wellbeing',
+        'risk_dimensions',
+        'thinking_patterns',
+        'protective_factors',
+        'parent_guidance',
+        'alerts',
+    ];
+    private const TREND_REQUIRED_KEYS = [
+        'headline',
+        'summary',
+        'risk_trajectory',
+        'recurring_risks',
+        'thinking_trends',
+        'protective_trends',
+        'topic_trends',
+        'parent_guidance',
+    ];
     private const CONTENT_MIN_MESSAGES = 12;
-    private const CONTENT_MIN_CHARACTERS = 240;
+    private const CONTENT_MIN_CHARACTERS = 150;
+    private const CONTENT_MIN_ACTIVE_DAYS = 2;
+    private const INCREMENT_MIN_MESSAGES = 6;
+    private const INCREMENT_MIN_CHARACTERS = 80;
+    private const INCREMENT_MIN_ACTIVE_DAYS = 1;
+    private const TRANSCRIPT_MAX_MESSAGES = 220;
+    private const TRANSCRIPT_MAX_MESSAGE_CHARS = 420;
+    private const TRANSCRIPT_MAX_TOTAL_CHARS = 22000;
+    private const CHILD_MESSAGE_WEIGHT = 1.0;
+    private const ASSISTANT_MESSAGE_WEIGHT = 0.2;
+    private const REPORT_PROMPT_VERSION = 'ai-report-v5';
+    private const TREND_PROMPT_VERSION = 'ai-trend-v1';
 
     private ChildReport $reportModel;
+    private ?string $lastAnalysisFailureReason = null;
 
     public function __construct(?ChildReport $reportModel = null)
     {
@@ -39,11 +76,13 @@ class ChildReportService
 
     public function getHistoryBundle(int $childId, int $parentId): array
     {
-        $this->getChildOrFail($childId, $parentId);
+        $child = $this->getChildOrFail($childId, $parentId);
+        $this->reportModel->deleteOrphanedReportMessages();
         $this->ensureAutoReportsForChild($childId, $parentId);
 
         return [
             'settings' => $this->formatSettings($this->getSettings($childId, $parentId)),
+            'usage_report' => $this->buildUsageHabitReport($child),
             'reports' => array_map(
                 fn(array $row) => $this->formatStoredReportRow($row),
                 $this->reportModel->listStoredReports($childId, $parentId)
@@ -70,8 +109,13 @@ class ChildReportService
         $this->getChildOrFail($childId, $parentId);
 
         $enabled = !empty($input['auto_generate_enabled']);
-        $frequencyDays = $this->normalizeDays($input['auto_generate_frequency_days'] ?? 7, 7);
-        $windowDays = $this->normalizeDays($input['auto_generate_window_days'] ?? 14, 14);
+        $periodDays = $this->normalizeDays(
+            $input['auto_generate_frequency_days']
+                ?? $input['auto_generate_period_days']
+                ?? $input['auto_generate_window_days']
+                ?? 7,
+            7
+        );
         $now = AppTime::now();
 
         $existing = $this->getSettings($childId, $parentId);
@@ -81,8 +125,8 @@ class ChildReportService
 
         $saved = $this->reportModel->upsertReportSettings($childId, $parentId, [
             'auto_generate_enabled' => $enabled,
-            'auto_generate_frequency_days' => $frequencyDays,
-            'auto_generate_window_days' => $windowDays,
+            'auto_generate_frequency_days' => $periodDays,
+            'auto_generate_window_days' => $periodDays,
             'next_report_due_at' => $nextDueAt,
             'last_report_generated_at' => $existing['last_report_generated_at'] ?? null,
         ]);
@@ -97,6 +141,7 @@ class ChildReportService
     public function generateAndStore(int $childId, int $parentId, int $days, string $mode = 'manual'): array
     {
         $child = $this->getChildOrFail($childId, $parentId);
+        $this->reportModel->deleteOrphanedReportMessages();
 
         return $mode === 'auto'
             ? $this->generateAutoReportBundle($child, $parentId, $days)
@@ -105,7 +150,8 @@ class ChildReportService
 
     public function getCumulativeAnalysis(int $childId, int $parentId, array $reportIds): array
     {
-        $this->getChildOrFail($childId, $parentId);
+        $child = $this->getChildOrFail($childId, $parentId);
+        $this->reportModel->deleteOrphanedReportMessages();
         $rows = $this->reportModel->getStoredReportsByIds($childId, $parentId, $reportIds);
         if ($rows === []) {
             throw new \RuntimeException('Select at least one saved report.');
@@ -118,13 +164,428 @@ class ChildReportService
             $parentId,
             array_column($rows, 'id')
         );
+        $retainedMessages = $this->dedupeRetainedMessages(
+            $this->reportModel->getRetainedMessagesForReports(
+                $childId,
+                $parentId,
+                array_column($rows, 'id')
+            )
+        );
 
-        $analysis = $this->buildTrendAnalysis($reports, $records, $messageSummary);
+        $analysis = $this->buildTrendAnalysis($child, $reports, $records, $messageSummary, $retainedMessages);
 
         return [
             'analysis' => $analysis,
             'reports' => $records,
         ];
+    }
+
+    public function runPromptSmokeTest(array $fixture, bool $callModel = true): array
+    {
+        $child = $fixture['child'] ?? [
+            'birth_date' => '2016-01-01',
+            'gender' => 'unknown',
+            'last_login_at' => null,
+        ];
+
+        $scope = $fixture['scope'] ?? $this->buildScopeDescriptor(
+            AppTime::now()->sub(new DateInterval('P7D'))->format('Y-m-d H:i:s'),
+            AppTime::now()->format('Y-m-d H:i:s'),
+            'manual_incremental',
+            AppTime::today()->format('Y-m-d')
+        );
+
+        $messages = $this->filterReportMessages($fixture['messages'] ?? []);
+        $incrementMessages = $this->filterReportMessages($fixture['increment_messages'] ?? $messages);
+        $childMessages = $this->filterMessagesByRole($messages, 'user');
+        $incrementChildMessages = $this->filterMessagesByRole($incrementMessages, 'user');
+        $summary = $fixture['summary'] ?? $this->buildSyntheticSummaryFromMessages($messages, $child);
+        $readiness = $this->computeContentReadiness($childMessages, (int) ($scope['days'] ?? 7), $incrementChildMessages);
+        $packet = $this->buildAiReportPacket($child, $summary, $scope, $readiness, $messages);
+        $previewAnalysis = $this->buildPreviewAnalysis($child, $summary, $scope, $readiness);
+
+        $result = [
+            'prompt_version' => self::REPORT_PROMPT_VERSION,
+            'system_prompt' => $this->buildReportSystemPrompt(),
+            'user_packet' => $packet,
+            'readiness' => $readiness,
+            'preview_analysis' => $previewAnalysis,
+        ];
+
+        if ($callModel) {
+            $analysis = $this->requestLlmAnalysis($packet);
+            $result['raw_analysis'] = $analysis;
+            $result['normalized_analysis'] = $analysis !== null
+                ? $this->normalizeAnalysisPayload($analysis, $previewAnalysis)
+                : null;
+            $result['validation'] = $this->validateAnalysisPayload($analysis ?? []);
+            $result['failure_reason'] = $analysis === null ? $this->lastAnalysisFailureReason : null;
+        }
+
+        return $result;
+    }
+
+    private function buildUsageHabitReport(array $child): array
+    {
+        $childId = (int) ($child['id'] ?? 0);
+        $today = AppTime::today();
+        $dailyStart = $today->sub(new DateInterval('P14D'));
+        $currentWeekStart = $today->sub(new DateInterval('P' . (((int) $today->format('N')) - 1) . 'D'));
+        $weeklyStart = $currentWeekStart->sub(new DateInterval('P21D'));
+        $currentMonthStart = $today->modify('first day of this month');
+        $monthlyStart = $currentMonthStart->sub(new DateInterval('P2M'));
+
+        $globalStart = $dailyStart;
+        foreach ([$weeklyStart, $monthlyStart] as $candidate) {
+            if ($candidate < $globalStart) {
+                $globalStart = $candidate;
+            }
+        }
+
+        $dailyMap = $this->buildUsageDayMap(
+            $childId,
+            $globalStart->format('Y-m-d'),
+            $today->format('Y-m-d')
+        );
+
+        return [
+            'source' => 'usage_habit',
+            'source_detail' => 'This updates automatically once a day from recorded login and chat activity. Per-login duration figures are estimated from daily totals, and days with usage but missing login counts are treated as one inferred session.',
+            'updated_at' => AppTime::now()->format(DATE_ATOM),
+            'default_period' => 'day',
+            'child' => [
+                'id' => $childId,
+                'age_years' => $this->calculateAgeYears($child['birth_date'] ?? null),
+                'last_login_at' => AppTime::toIso8601($child['last_login_at'] ?? null),
+            ],
+            'ranges' => [
+                'day' => $this->buildUsageDailyRange($dailyMap, $dailyStart, $today),
+                'week' => $this->buildUsageWeeklyRange($dailyMap, $currentWeekStart),
+                'month' => $this->buildUsageMonthlyRange($dailyMap, $currentMonthStart, $today),
+            ],
+        ];
+    }
+
+    private function buildUsageDayMap(int $childId, string $startDate, string $endDate): array
+    {
+        $map = [];
+        $cursor = new DateTimeImmutable($startDate, AppTime::timezone());
+        $end = new DateTimeImmutable($endDate, AppTime::timezone());
+
+        while ($cursor <= $end) {
+            $key = $cursor->format('Y-m-d');
+            $map[$key] = [
+                'date' => $key,
+                'login_count' => 0,
+                'used_minutes' => 0,
+                'child_message_count' => 0,
+                'assistant_message_count' => 0,
+                'conversation_count' => 0,
+                'first_login_at' => null,
+                'last_login_at' => null,
+            ];
+            $cursor = $cursor->add(new DateInterval('P1D'));
+        }
+
+        foreach ($this->reportModel->getDailyLogins($childId, $startDate, $endDate) as $row) {
+            $date = $row['activity_date'] ?? null;
+            if (!$date || !isset($map[$date])) {
+                continue;
+            }
+
+            $map[$date]['login_count'] = (int) ($row['login_count'] ?? 0);
+            $map[$date]['first_login_at'] = AppTime::toIso8601($row['first_login_at'] ?? null);
+            $map[$date]['last_login_at'] = AppTime::toIso8601($row['last_login_at'] ?? null);
+        }
+
+        foreach ($this->reportModel->getDailyUsage($childId, $startDate, $endDate) as $row) {
+            $date = $row['activity_date'] ?? null;
+            if (!$date || !isset($map[$date])) {
+                continue;
+            }
+
+            $map[$date]['used_minutes'] = (int) ($row['used_minutes'] ?? 0);
+        }
+
+        foreach ($this->reportModel->getDailyMessages($childId, $startDate, $endDate) as $row) {
+            $date = $row['activity_date'] ?? null;
+            if (!$date || !isset($map[$date])) {
+                continue;
+            }
+
+            $map[$date]['child_message_count'] = (int) ($row['child_message_count'] ?? 0);
+            $map[$date]['assistant_message_count'] = (int) ($row['assistant_message_count'] ?? 0);
+        }
+
+        foreach ($this->reportModel->getDailyConversations($childId, $startDate, $endDate) as $row) {
+            $date = $row['activity_date'] ?? null;
+            if (!$date || !isset($map[$date])) {
+                continue;
+            }
+
+            $map[$date]['conversation_count'] = (int) ($row['conversation_count'] ?? 0);
+        }
+
+        return $map;
+    }
+
+    private function buildUsageDailyRange(array $dailyMap, DateTimeImmutable $start, DateTimeImmutable $end): array
+    {
+        $buckets = [];
+        $cursor = $start;
+        while ($cursor <= $end) {
+            $label = $cursor->format('m-d');
+            $buckets[] = $this->buildUsageBucket(
+                $dailyMap,
+                $cursor,
+                $cursor,
+                $label,
+                'day-' . $cursor->format('Y-m-d')
+            );
+            $cursor = $cursor->add(new DateInterval('P1D'));
+        }
+
+        return $this->buildUsageRangePayload('day', 'Last 15 Days', $buckets, $start, $end, $dailyMap);
+    }
+
+    private function buildUsageWeeklyRange(array $dailyMap, DateTimeImmutable $currentWeekStart): array
+    {
+        $buckets = [];
+        $rangeStart = $currentWeekStart->sub(new DateInterval('P21D'));
+        for ($index = 3; $index >= 0; $index--) {
+            $start = $currentWeekStart->sub(new DateInterval('P' . ($index * 7) . 'D'));
+            $end = $start->add(new DateInterval('P6D'));
+            $buckets[] = $this->buildUsageBucket(
+                $dailyMap,
+                $start,
+                $end,
+                $start->format('m-d') . ' to ' . $end->format('m-d'),
+                'week-' . $start->format('Y-m-d')
+            );
+        }
+
+        return $this->buildUsageRangePayload(
+            'week',
+            'Last 4 Weeks',
+            $buckets,
+            $rangeStart,
+            $currentWeekStart->add(new DateInterval('P6D')),
+            $dailyMap
+        );
+    }
+
+    private function buildUsageMonthlyRange(array $dailyMap, DateTimeImmutable $currentMonthStart, DateTimeImmutable $today): array
+    {
+        $buckets = [];
+        $rangeStart = $currentMonthStart->sub(new DateInterval('P2M'));
+        for ($index = 2; $index >= 0; $index--) {
+            $start = $currentMonthStart->sub(new DateInterval('P' . $index . 'M'));
+            $end = $start->add(new DateInterval('P1M'))->sub(new DateInterval('P1D'));
+            if ($end > $today) {
+                $end = $today;
+            }
+
+            $buckets[] = $this->buildUsageBucket(
+                $dailyMap,
+                $start,
+                $end,
+                $start->format('Y-m'),
+                'month-' . $start->format('Y-m')
+            );
+        }
+
+        return $this->buildUsageRangePayload('month', 'Last 3 Months', $buckets, $rangeStart, $today, $dailyMap);
+    }
+
+    private function buildUsageRangePayload(
+        string $period,
+        string $title,
+        array $buckets,
+        DateTimeImmutable $start,
+        DateTimeImmutable $end,
+        array $dailyMap
+    ): array {
+        return [
+            'period' => $period,
+            'title' => $title,
+            'bucket_count' => count($buckets),
+            'summary' => $this->buildUsageBucket($dailyMap, $start, $end, $title, $period . '-summary'),
+            'buckets' => $buckets,
+        ];
+    }
+
+    private function buildUsageBucket(
+        array $dailyMap,
+        DateTimeImmutable $start,
+        DateTimeImmutable $end,
+        string $label,
+        string $key
+    ): array {
+        $totals = [
+            'login_count' => 0,
+            'estimated_session_count' => 0,
+            'used_minutes' => 0,
+            'child_message_count' => 0,
+            'assistant_message_count' => 0,
+            'conversation_count' => 0,
+            'active_days' => 0,
+        ];
+        $earliestLoginAt = null;
+        $latestLoginAt = null;
+        $distribution = [];
+        $maxEstimatedMinutes = 0.0;
+
+        $cursor = $start;
+        while ($cursor <= $end) {
+            $dateKey = $cursor->format('Y-m-d');
+            $row = $dailyMap[$dateKey] ?? [
+                'login_count' => 0,
+                'used_minutes' => 0,
+                'child_message_count' => 0,
+                'assistant_message_count' => 0,
+                'conversation_count' => 0,
+                'first_login_at' => null,
+                'last_login_at' => null,
+            ];
+
+            $loginCount = (int) ($row['login_count'] ?? 0);
+            $usedMinutes = (int) ($row['used_minutes'] ?? 0);
+            $childMessages = (int) ($row['child_message_count'] ?? 0);
+            $assistantMessages = (int) ($row['assistant_message_count'] ?? 0);
+            $conversationCount = (int) ($row['conversation_count'] ?? 0);
+            $estimatedSessionCount = max(
+                $loginCount,
+                ($usedMinutes > 0 || $childMessages > 0 || $assistantMessages > 0 || $conversationCount > 0) ? 1 : 0
+            );
+
+            $totals['login_count'] += $loginCount;
+            $totals['estimated_session_count'] += $estimatedSessionCount;
+            $totals['used_minutes'] += $usedMinutes;
+            $totals['child_message_count'] += $childMessages;
+            $totals['assistant_message_count'] += $assistantMessages;
+            $totals['conversation_count'] += $conversationCount;
+
+            if ($loginCount > 0 || $usedMinutes > 0 || $childMessages > 0) {
+                $totals['active_days']++;
+            }
+
+            if ($estimatedSessionCount > 0) {
+                $estimatedMinutes = round($usedMinutes / max(1, $estimatedSessionCount), 1);
+                $distribution[] = [
+                    'value' => $estimatedMinutes,
+                    'weight' => $estimatedSessionCount,
+                ];
+                if ($estimatedMinutes > $maxEstimatedMinutes) {
+                    $maxEstimatedMinutes = $estimatedMinutes;
+                }
+            }
+
+            $firstLoginAt = $row['first_login_at'] ?? null;
+            if ($firstLoginAt !== null && ($earliestLoginAt === null || $firstLoginAt < $earliestLoginAt)) {
+                $earliestLoginAt = $firstLoginAt;
+            }
+
+            $lastLoginAt = $row['last_login_at'] ?? null;
+            if ($lastLoginAt !== null && ($latestLoginAt === null || $lastLoginAt > $latestLoginAt)) {
+                $latestLoginAt = $lastLoginAt;
+            }
+
+            $cursor = $cursor->add(new DateInterval('P1D'));
+        }
+
+        $avgMinutesPerLogin = $totals['estimated_session_count'] > 0
+            ? round($totals['used_minutes'] / $totals['estimated_session_count'], 1)
+            : 0.0;
+        $avgChildMessagesPerLogin = $totals['estimated_session_count'] > 0
+            ? round($totals['child_message_count'] / $totals['estimated_session_count'], 1)
+            : 0.0;
+
+        return [
+            'key' => $key,
+            'label' => $label,
+            'start' => AppTime::toIso8601($start->format('Y-m-d 00:00:00')),
+            'end' => AppTime::toIso8601($end->format('Y-m-d 23:59:59')),
+            'login_count' => $totals['login_count'],
+            'estimated_session_count' => $totals['estimated_session_count'],
+            'used_minutes' => $totals['used_minutes'],
+            'child_message_count' => $totals['child_message_count'],
+            'assistant_message_count' => $totals['assistant_message_count'],
+            'conversation_count' => $totals['conversation_count'],
+            'active_days' => $totals['active_days'],
+            'avg_estimated_minutes_per_login' => $avgMinutesPerLogin,
+            'median_estimated_minutes_per_login' => $this->weightedMedian($distribution),
+            'max_estimated_minutes_per_login' => round($maxEstimatedMinutes, 1),
+            'avg_child_messages_per_login' => $avgChildMessagesPerLogin,
+            'earliest_login_at' => $earliestLoginAt,
+            'latest_login_at' => $latestLoginAt,
+        ];
+    }
+
+    private function weightedMedian(array $distribution): float
+    {
+        if ($distribution === []) {
+            return 0.0;
+        }
+
+        usort($distribution, static function (array $left, array $right): int {
+            return ($left['value'] <=> $right['value']);
+        });
+
+        $totalWeight = 0;
+        foreach ($distribution as $item) {
+            $totalWeight += (int) ($item['weight'] ?? 0);
+        }
+
+        if ($totalWeight <= 0) {
+            return 0.0;
+        }
+
+        $threshold = (int) ceil($totalWeight / 2);
+        $runningWeight = 0;
+        foreach ($distribution as $item) {
+            $runningWeight += (int) ($item['weight'] ?? 0);
+            if ($runningWeight >= $threshold) {
+                return round((float) ($item['value'] ?? 0), 1);
+            }
+        }
+
+        return round((float) ($distribution[count($distribution) - 1]['value'] ?? 0), 1);
+    }
+
+    public function runTrendPromptSmokeTest(array $fixture, bool $callModel = true): array
+    {
+        $child = $fixture['child'] ?? [
+            'birth_date' => '2016-01-01',
+            'gender' => 'unknown',
+            'last_login_at' => null,
+        ];
+        $reports = $fixture['reports'] ?? [];
+        $records = $fixture['records'] ?? [];
+        $retainedMessages = $this->dedupeRetainedMessages(
+            $this->filterReportMessages($fixture['retained_messages'] ?? [])
+        );
+        $messageSummary = $fixture['message_summary'] ?? $this->buildTrendMessageSummary($retainedMessages);
+        $packet = $this->buildAiTrendPacket($child, $reports, $records, $messageSummary, $retainedMessages);
+        $fallback = $this->buildRuleBasedTrendAnalysis($reports, $records, $messageSummary);
+
+        $result = [
+            'prompt_version' => self::TREND_PROMPT_VERSION,
+            'system_prompt' => $this->buildTrendSystemPrompt(),
+            'user_packet' => $packet,
+            'fallback_analysis' => $fallback,
+        ];
+
+        if ($callModel) {
+            $analysis = $this->requestTrendLlmAnalysis($packet);
+            $result['raw_analysis'] = $analysis;
+            $result['normalized_analysis'] = $analysis !== null
+                ? $this->normalizeTrendAnalysisPayload($analysis, $fallback)
+                : null;
+            $result['validation'] = $this->validateTrendAnalysisPayload($analysis ?? []);
+            $result['failure_reason'] = $analysis === null ? $this->lastAnalysisFailureReason : null;
+        }
+
+        return $result;
     }
 
     public function runDueAutoReports(?int $parentId = null, int $limit = 20): array
@@ -142,7 +603,7 @@ class ChildReportService
             $bundle = $this->generateAndStore(
                 (int) $row['child_id'],
                 (int) $row['parent_id'],
-                $this->normalizeDays($row['auto_generate_window_days'] ?? 14),
+                $this->resolveAutoReportPeriodDays($row),
                 'auto'
             );
 
@@ -150,8 +611,13 @@ class ChildReportService
                 'child_id' => $child['id'],
                 'child_name' => $child['name'],
                 'report_id' => $bundle['report_record']['id'] ?? null,
-                'status' => $bundle['report']['status'] ?? 'ready',
-                'risk_level' => $bundle['report']['risk_level'] ?? 'low',
+                'status' => !empty($bundle['generated'])
+                    ? ($bundle['report']['status'] ?? 'ready')
+                    : 'skipped',
+                'risk_level' => !empty($bundle['generated'])
+                    ? ($bundle['report']['risk_level'] ?? 'low')
+                    : 'none',
+                'message' => $bundle['message'] ?? null,
             ];
         }
 
@@ -178,7 +644,7 @@ class ChildReportService
         $this->generateAndStore(
             $childId,
             $parentId,
-            $this->normalizeDays($settings['auto_generate_window_days'] ?? 14),
+            $this->resolveAutoReportPeriodDays($settings),
             'auto'
         );
     }
@@ -186,16 +652,23 @@ class ChildReportService
     private function generateManualReportBundle(array $child, int $parentId, int $fallbackDays): array
     {
         $childId = (int) $child['id'];
-        $now = AppTime::now();
-        $reportDay = $now->format('Y-m-d');
-        $existing = $this->reportModel->findManualReportForDay($childId, $parentId, $reportDay);
-        $scope = $this->buildManualScope($childId, $parentId, $fallbackDays, $existing);
+        $scope = $this->buildManualScope($childId, $parentId, $fallbackDays);
         $messages = $this->reportModel->getConversationMessagesBetween($childId, $scope['start_at'], $scope['end_at']);
-        $snapshot = $this->buildSnapshotFromScope($child, $scope, 'manual', true);
+        $snapshot = $this->buildSnapshotFromScope($child, $scope, 'manual', true, $messages, $messages);
 
-        $row = $this->storeSnapshot($childId, $parentId, $snapshot, $scope, $messages, $existing);
+        if (empty($snapshot['content_readiness']['can_generate'])) {
+            return $this->buildSkippedGenerationBundle(
+                $childId,
+                $parentId,
+                $snapshot,
+                $snapshot['content_readiness']['reason'] ?? 'Not enough new child-authored chat has accumulated yet.'
+            );
+        }
+
+        $row = $this->storeSnapshot($childId, $parentId, $snapshot, $scope, $messages);
 
         return [
+            'generated' => true,
             'report' => $this->decodeStoredReportRow($row),
             'report_record' => $this->formatStoredReportRow($row),
             'settings' => $this->formatSettings($this->getSettings($childId, $parentId)),
@@ -203,7 +676,7 @@ class ChildReportService
                 fn(array $item) => $this->formatStoredReportRow($item),
                 $this->reportModel->listStoredReports($childId, $parentId)
             ),
-            'updated_existing' => $existing !== null,
+            'updated_existing' => false,
         ];
     }
 
@@ -211,23 +684,28 @@ class ChildReportService
     {
         $childId = (int) $child['id'];
         $settings = $this->getSettings($childId, $parentId);
-        $days = $this->normalizeDays($days ?: ($settings['auto_generate_window_days'] ?? 14));
-        $scope = $this->buildRollingScope($days);
+        $days = $this->normalizeDays($days ?: $this->resolveAutoReportPeriodDays($settings), 7);
+        $scope = $this->buildAutoScope($childId, $parentId, $days);
         $messages = $this->reportModel->getConversationMessagesBetween($childId, $scope['start_at'], $scope['end_at']);
-        $snapshot = $this->buildSnapshotFromScope($child, $scope, 'auto', true);
+        $snapshot = $this->buildSnapshotFromScope($child, $scope, 'auto', true, $messages, $messages);
+
+        if (empty($snapshot['content_readiness']['can_generate'])) {
+            $this->advanceAutoSchedule($childId, $parentId, $settings, $days, false);
+
+            return $this->buildSkippedGenerationBundle(
+                $childId,
+                $parentId,
+                $snapshot,
+                $snapshot['content_readiness']['reason'] ?? 'Not enough new child-authored chat has accumulated yet.'
+            );
+        }
+
         $row = $this->storeSnapshot($childId, $parentId, $snapshot, $scope, $messages);
 
-        $frequencyDays = (int) ($settings['auto_generate_frequency_days'] ?? 7);
-        $nextDueAt = AppTime::now()->add(new DateInterval('P' . $frequencyDays . 'D'))->format('Y-m-d H:i:s');
-        $this->reportModel->upsertReportSettings($childId, $parentId, [
-            'auto_generate_enabled' => !empty($settings['auto_generate_enabled']),
-            'auto_generate_frequency_days' => $frequencyDays,
-            'auto_generate_window_days' => (int) ($settings['auto_generate_window_days'] ?? $days),
-            'next_report_due_at' => $nextDueAt,
-            'last_report_generated_at' => AppTime::now()->format('Y-m-d H:i:s'),
-        ]);
+        $this->advanceAutoSchedule($childId, $parentId, $settings, $days, true);
 
         return [
+            'generated' => true,
             'report' => $this->decodeStoredReportRow($row),
             'report_record' => $this->formatStoredReportRow($row),
             'settings' => $this->formatSettings($this->getSettings($childId, $parentId)),
@@ -290,33 +768,47 @@ class ChildReportService
         int $childId,
         int $parentId,
         int $fallbackDays,
-        ?array $existingManualReport = null
+        ?int $excludeReportId = null
+    ): array {
+        $now = AppTime::now();
+        return $this->buildIncrementalScope(
+            $childId,
+            $parentId,
+            $fallbackDays,
+            'manual_incremental',
+            $now->format('Y-m-d'),
+            $excludeReportId
+        );
+    }
+
+    private function buildAutoScope(int $childId, int $parentId, int $days): array
+    {
+        $now = AppTime::now();
+        return $this->buildIncrementalScope(
+            $childId,
+            $parentId,
+            $days,
+            'auto_incremental',
+            $now->format('Y-m-d')
+        );
+    }
+
+    private function buildIncrementalScope(
+        int $childId,
+        int $parentId,
+        int $fallbackDays,
+        string $type,
+        string $reportDay,
+        ?int $excludeReportId = null
     ): array {
         $now = AppTime::now();
         $settings = $this->getSettings($childId, $parentId);
         $fallbackWindowDays = $this->normalizeDays(
-            $fallbackDays ?: ($settings['auto_generate_window_days'] ?? 14)
+            $fallbackDays ?: $this->resolveAutoReportPeriodDays($settings),
+            14
         );
 
-        $scopeStartAt = $existingManualReport['scope_started_at'] ?? null;
-        if ($scopeStartAt === null) {
-            $previous = $existingManualReport
-                ? $this->reportModel->getLatestStoredReportBefore(
-                    $childId,
-                    $parentId,
-                    $existingManualReport['created_at'] ?? $now->format('Y-m-d H:i:s'),
-                    (int) $existingManualReport['id']
-                )
-                : $this->reportModel->getLatestStoredReport($childId, $parentId);
-
-            if ($previous) {
-                $scopeStartAt = $previous['scope_ended_at']
-                    ?? $previous['updated_at']
-                    ?? $previous['created_at']
-                    ?? null;
-            }
-        }
-
+        $scopeStartAt = $this->resolveLatestReportCutoffAt($childId, $parentId, $excludeReportId);
         if ($scopeStartAt === null) {
             $scopeStartAt = $this->buildRollingScope($fallbackWindowDays)['start_at'];
         }
@@ -326,12 +818,7 @@ class ChildReportService
             $scopeStartAt = $now->sub(new DateInterval('PT1M'))->format('Y-m-d H:i:s');
         }
 
-        return $this->buildScopeDescriptor(
-            $scopeStartAt,
-            $scopeEndAt,
-            'manual_incremental',
-            $now->format('Y-m-d')
-        );
+        return $this->buildScopeDescriptor($scopeStartAt, $scopeEndAt, $type, $reportDay);
     }
 
     private function buildRollingScope(int $days): array
@@ -370,6 +857,418 @@ class ChildReportService
         ];
     }
 
+    private function resolveLatestReportCutoffAt(int $childId, int $parentId, ?int $excludeReportId = null): ?string
+    {
+        $latest = $excludeReportId !== null
+            ? $this->reportModel->getLatestStoredReportExcluding($childId, $parentId, $excludeReportId)
+            : $this->reportModel->getLatestStoredReport($childId, $parentId);
+
+        return $this->resolveReportCutoffAt($latest);
+    }
+
+    private function resolveReportCutoffAt(?array $report): ?string
+    {
+        if (!$report) {
+            return null;
+        }
+
+        return $report['scope_ended_at']
+            ?? $report['updated_at']
+            ?? $report['created_at']
+            ?? null;
+    }
+
+    private function buildSkippedGenerationBundle(
+        int $childId,
+        int $parentId,
+        array $snapshot,
+        string $message,
+        bool $updatedExisting = false
+    ): array {
+        return [
+            'generated' => false,
+            'message' => $message,
+            'updated_existing' => $updatedExisting,
+            'report' => $snapshot,
+            'report_record' => null,
+            'settings' => $this->formatSettings($this->getSettings($childId, $parentId)),
+            'reports' => array_map(
+                fn(array $item) => $this->formatStoredReportRow($item),
+                $this->reportModel->listStoredReports($childId, $parentId)
+            ),
+        ];
+    }
+
+    private function advanceAutoSchedule(
+        int $childId,
+        int $parentId,
+        array $settings,
+        int $days,
+        bool $markGenerated
+    ): void {
+        $frequencyDays = $this->resolveAutoReportPeriodDays($settings, $days ?: 7);
+        $nextDueAt = AppTime::now()->add(new DateInterval('P' . $frequencyDays . 'D'))->format('Y-m-d H:i:s');
+        $this->reportModel->upsertReportSettings($childId, $parentId, [
+            'auto_generate_enabled' => !empty($settings['auto_generate_enabled']),
+            'auto_generate_frequency_days' => $frequencyDays,
+            'auto_generate_window_days' => $frequencyDays,
+            'next_report_due_at' => $nextDueAt,
+            'last_report_generated_at' => $markGenerated
+                ? AppTime::now()->format('Y-m-d H:i:s')
+                : ($settings['last_report_generated_at'] ?? null),
+        ]);
+    }
+
+    private function filterReportMessages(array $messages): array
+    {
+        return array_values(array_filter($messages, function (array $message) {
+            return in_array((string) ($message['role'] ?? ''), ['user', 'assistant'], true);
+        }));
+    }
+
+    private function dedupeRetainedMessages(array $messages): array
+    {
+        $deduped = [];
+        $seen = [];
+
+        foreach ($messages as $message) {
+            $messageId = (int) ($message['message_id'] ?? 0);
+            $key = $messageId > 0
+                ? 'message_' . $messageId
+                : sha1(
+                    implode('|', [
+                        (string) ($message['conversation_id'] ?? ''),
+                        (string) ($message['role'] ?? ''),
+                        (string) ($message['created_at'] ?? ''),
+                        (string) ($message['content'] ?? ''),
+                    ])
+                );
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $deduped[] = $message;
+        }
+
+        return $deduped;
+    }
+
+    private function filterMessagesByRole(array $messages, string $role): array
+    {
+        return array_values(array_filter($messages, function (array $message) use ($role) {
+            return (string) ($message['role'] ?? '') === $role;
+        }));
+    }
+
+    private function computeMessageStats(array $messages): array
+    {
+        $activeDays = [];
+        $conversationIds = [];
+        $characterCount = 0;
+        $firstAt = null;
+        $lastAt = null;
+
+        foreach ($messages as $message) {
+            $content = trim((string) ($message['content'] ?? ''));
+            $characterCount += mb_strlen($content, 'UTF-8');
+
+            $createdAt = (string) ($message['created_at'] ?? '');
+            if ($createdAt !== '') {
+                $day = substr($createdAt, 0, 10);
+                if ($day !== '') {
+                    $activeDays[$day] = true;
+                }
+                $firstAt ??= $createdAt;
+                $lastAt = $createdAt;
+            }
+
+            $conversationId = (int) ($message['conversation_id'] ?? 0);
+            if ($conversationId > 0) {
+                $conversationIds[$conversationId] = true;
+            }
+        }
+
+        return [
+            'message_count' => count($messages),
+            'character_count' => $characterCount,
+            'active_days' => count($activeDays),
+            'conversation_count' => count($conversationIds),
+            'first_message_at' => $firstAt,
+            'last_message_at' => $lastAt,
+        ];
+    }
+
+    private function buildSyntheticSummaryFromMessages(array $messages, array $child): array
+    {
+        $childMessages = $this->filterMessagesByRole($messages, 'user');
+        $assistantMessages = $this->filterMessagesByRole($messages, 'assistant');
+        $allStats = $this->computeMessageStats($messages);
+        $childStats = $this->computeMessageStats($childMessages);
+
+        return [
+            'total_logins' => 0,
+            'total_conversations' => $allStats['conversation_count'],
+            'total_messages' => $allStats['message_count'],
+            'total_child_messages' => $childStats['message_count'],
+            'total_assistant_messages' => count($assistantMessages),
+            'total_minutes' => 0,
+            'active_days' => $allStats['active_days'],
+            'average_minutes_per_active_day' => 0,
+            'average_messages_per_active_day' => $allStats['active_days'] > 0
+                ? (int) round($childStats['message_count'] / $allStats['active_days'])
+                : 0,
+            'last_login_at' => AppTime::toIso8601($child['last_login_at'] ?? null),
+            'peak_day' => null,
+            'peak_score' => 0,
+        ];
+    }
+
+    private function buildTrendMessageSummary(array $messages): array
+    {
+        $allStats = $this->computeMessageStats($messages);
+        $childStats = $this->computeMessageStats($this->filterMessagesByRole($messages, 'user'));
+        $assistantStats = $this->computeMessageStats($this->filterMessagesByRole($messages, 'assistant'));
+
+        return [
+            'total_message_count' => $allStats['message_count'],
+            'child_message_count' => $childStats['message_count'],
+            'assistant_message_count' => $assistantStats['message_count'],
+            'active_days' => $allStats['active_days'],
+            'first_message_at' => $allStats['first_message_at'],
+            'last_message_at' => $allStats['last_message_at'],
+        ];
+    }
+
+    private function buildPreviewAnalysis(array $child, array $summary, array $scope, array $readiness): array
+    {
+        $headline = !empty($readiness['can_generate'])
+            ? 'Current chat scope is ready for AI report generation.'
+            : 'More new chat activity is needed before generating another AI report.';
+
+        $summaryText = !empty($readiness['can_generate'])
+            ? 'The current report scope meets the chat-volume threshold. When generated, the report will be written by AI from the organized transcript and activity summary.'
+            : ($readiness['reason'] ?? 'The current scope does not yet meet the incremental threshold for another AI report.');
+
+        return [
+            'source' => 'preview',
+            'source_detail' => 'This is only a readiness preview. No AI report has been generated or saved yet.',
+            'headline' => $headline,
+            'sample_confidence' => $readiness['confidence'] ?? 'none',
+            'disclaimer' => 'This report is generated from recent chat and activity context. It is not a diagnosis and should be read together with offline behavior.',
+            'topic_overview' => $summaryText,
+            'topics' => [],
+            'interests' => [],
+            'emotional_overview' => [
+                'summary' => $summaryText,
+                'supporting_signals' => [
+                    'Child messages in scope: ' . (int) ($readiness['message_count'] ?? 0),
+                    'New child messages since last saved report: ' . (int) ($readiness['increment_message_count'] ?? 0),
+                    'Active days in scope: ' . (int) ($readiness['active_days'] ?? 0),
+                ],
+            ],
+            'wellbeing' => [
+                'summary' => $summaryText,
+                'strengths' => [],
+                'watch_points' => [
+                    'AI generation waits until enough new child-authored chat has accumulated since the last saved report.',
+                ],
+            ],
+            'risk_dimensions' => [],
+            'thinking_patterns' => [],
+            'protective_factors' => [],
+            'parent_guidance' => [
+                'Use saved reports as periodic summaries rather than re-running them after very small chat changes.',
+                'Discuss patterns and feelings with the child rather than treating the report as a diagnosis.',
+            ],
+            'alerts' => [],
+            'prompt_version' => self::REPORT_PROMPT_VERSION,
+            'scope_overview' => [
+                'start_at' => AppTime::toIso8601($scope['start_at'] ?? null),
+                'end_at' => AppTime::toIso8601($scope['end_at'] ?? null),
+                'total_child_messages' => (int) ($summary['total_child_messages'] ?? 0),
+            ],
+        ];
+    }
+
+    private function validateAnalysisPayload(array $analysis): array
+    {
+        $errors = [];
+        $requiredKeys = self::REPORT_REQUIRED_KEYS;
+
+        foreach ($requiredKeys as $key) {
+            if (!array_key_exists($key, $analysis)) {
+                $errors[] = "Missing key: {$key}";
+            }
+        }
+
+        if (isset($analysis['sample_confidence']) && !in_array($analysis['sample_confidence'], ['none', 'low', 'medium', 'high'], true)) {
+            $errors[] = 'Invalid sample_confidence value.';
+        }
+
+        foreach (['topics', 'interests', 'risk_dimensions', 'thinking_patterns', 'protective_factors', 'parent_guidance', 'alerts'] as $key) {
+            if (isset($analysis[$key]) && !is_array($analysis[$key])) {
+                $errors[] = "{$key} must be an array.";
+            }
+        }
+
+        if (isset($analysis['emotional_overview']) && !is_array($analysis['emotional_overview'])) {
+            $errors[] = 'emotional_overview must be an object.';
+        }
+
+        if (isset($analysis['wellbeing']) && !is_array($analysis['wellbeing'])) {
+            $errors[] = 'wellbeing must be an object.';
+        }
+
+        return [
+            'valid' => $errors === [],
+            'errors' => $errors,
+        ];
+    }
+
+    private function buildAiReportPacket(
+        array $child,
+        array $summary,
+        array $scope,
+        array $readiness,
+        array $messages
+    ): array {
+        return [
+            'prompt_version' => self::REPORT_PROMPT_VERSION,
+            'child' => [
+                'age_years' => $this->calculateAgeYears($child['birth_date'] ?? null),
+                'gender' => $child['gender'] ?? null,
+                'last_login_at' => AppTime::toIso8601($child['last_login_at'] ?? null),
+            ],
+            'scope' => [
+                'type' => $scope['type'] ?? 'rolling_window',
+                'start_at' => AppTime::toIso8601($scope['start_at'] ?? null),
+                'end_at' => AppTime::toIso8601($scope['end_at'] ?? null),
+                'days' => (int) ($scope['days'] ?? 0),
+                'report_day' => $scope['report_day'] ?? null,
+            ],
+            'activity_summary' => $summary,
+            'message_weighting' => $this->buildMessageWeightingMeta(
+                (int) ($summary['total_child_messages'] ?? 0),
+                (int) ($summary['total_assistant_messages'] ?? 0)
+            ),
+            'sample_readiness' => $readiness,
+            'transcript_bundle' => $this->buildTranscriptBundle($messages),
+        ];
+    }
+
+    private function buildTranscriptBundle(array $messages): array
+    {
+        $grouped = [];
+        $includedMessages = 0;
+        $omittedMessages = 0;
+        $usedChars = 0;
+        $childMessageCount = 0;
+        $assistantMessageCount = 0;
+        $weightedSignalScore = 0.0;
+
+        foreach ($messages as $message) {
+            $conversationId = (int) ($message['conversation_id'] ?? 0);
+            $key = $conversationId > 0 ? $conversationId : ('unknown_' . count($grouped));
+            if (!isset($grouped[$key])) {
+                $grouped[$key] = [
+                    'conversation_id' => $conversationId > 0 ? $conversationId : null,
+                    'started_at' => AppTime::toIso8601($message['created_at'] ?? null),
+                    'message_count' => 0,
+                    'child_message_count' => 0,
+                    'assistant_message_count' => 0,
+                    'weighted_signal_score' => 0.0,
+                    'messages' => [],
+                ];
+            }
+
+            $role = (string) ($message['role'] ?? 'user');
+            $roleWeight = $this->messageRoleWeight($role);
+            $normalizedContent = $this->normalizeTranscriptContent((string) ($message['content'] ?? ''));
+            $truncatedContent = $this->truncateTranscriptContent(
+                $normalizedContent,
+                $role === 'assistant'
+                    ? max(120, (int) floor(self::TRANSCRIPT_MAX_MESSAGE_CHARS * 0.55))
+                    : self::TRANSCRIPT_MAX_MESSAGE_CHARS
+            );
+            $contentLength = mb_strlen($truncatedContent, 'UTF-8');
+
+            if (
+                $includedMessages < self::TRANSCRIPT_MAX_MESSAGES
+                && ($usedChars + $contentLength) <= self::TRANSCRIPT_MAX_TOTAL_CHARS
+            ) {
+                $grouped[$key]['messages'][] = [
+                    'timestamp' => AppTime::toIso8601($message['created_at'] ?? null),
+                    'role' => $role,
+                    'content' => $truncatedContent,
+                ];
+                $includedMessages++;
+                $usedChars += $contentLength;
+            } else {
+                $omittedMessages++;
+            }
+
+            $grouped[$key]['message_count']++;
+            $grouped[$key]['weighted_signal_score'] = round($grouped[$key]['weighted_signal_score'] + $roleWeight, 1);
+            $weightedSignalScore += $roleWeight;
+
+            if ($role === 'user') {
+                $grouped[$key]['child_message_count']++;
+                $childMessageCount++;
+            } elseif ($role === 'assistant') {
+                $grouped[$key]['assistant_message_count']++;
+                $assistantMessageCount++;
+            }
+        }
+
+        return [
+            'conversation_count' => count($grouped),
+            'included_message_count' => $includedMessages,
+            'omitted_message_count' => $omittedMessages,
+            'weighted_signal_score' => round($weightedSignalScore, 1),
+            'message_weighting' => $this->buildMessageWeightingMeta($childMessageCount, $assistantMessageCount),
+            'conversations' => array_values($grouped),
+        ];
+    }
+
+    private function buildMessageWeightingMeta(int $childMessageCount, int $assistantMessageCount): array
+    {
+        $weightedChildSignal = round($childMessageCount * self::CHILD_MESSAGE_WEIGHT, 1);
+        $weightedAssistantContext = round($assistantMessageCount * self::ASSISTANT_MESSAGE_WEIGHT, 1);
+
+        return [
+            'child_message_weight' => self::CHILD_MESSAGE_WEIGHT,
+            'assistant_message_weight' => self::ASSISTANT_MESSAGE_WEIGHT,
+            'weighted_child_signal' => $weightedChildSignal,
+            'weighted_assistant_context' => $weightedAssistantContext,
+            'weighted_total_signal' => round($weightedChildSignal + $weightedAssistantContext, 1),
+            'guidance' => 'Child-authored messages are primary evidence. Assistant replies are supporting context only.',
+        ];
+    }
+
+    private function messageRoleWeight(string $role): float
+    {
+        return $role === 'assistant'
+            ? self::ASSISTANT_MESSAGE_WEIGHT
+            : self::CHILD_MESSAGE_WEIGHT;
+    }
+
+    private function normalizeTranscriptContent(string $content): string
+    {
+        $content = preg_replace('/\s+/u', ' ', trim($content)) ?? '';
+        return $content;
+    }
+
+    private function truncateTranscriptContent(string $content, int $maxChars): string
+    {
+        if (mb_strlen($content, 'UTF-8') <= $maxChars) {
+            return $content;
+        }
+
+        return rtrim(mb_substr($content, 0, $maxChars - 1, 'UTF-8')) . '…';
+    }
+
     private function getChildOrFail(int $childId, int $parentId): array
     {
         $child = $this->reportModel->getChildForParent($childId, $parentId);
@@ -392,10 +1291,21 @@ class ChildReportService
             'parent_id' => $parentId,
             'auto_generate_enabled' => 0,
             'auto_generate_frequency_days' => 7,
-            'auto_generate_window_days' => 14,
+            'auto_generate_window_days' => 7,
             'next_report_due_at' => null,
             'last_report_generated_at' => null,
         ];
+    }
+
+    private function resolveAutoReportPeriodDays(array $settings, int $default = 7): int
+    {
+        return $this->normalizeDays(
+            $settings['auto_generate_frequency_days']
+                ?? $settings['auto_generate_period_days']
+                ?? $settings['auto_generate_window_days']
+                ?? $default,
+            $default
+        );
     }
 
     private function buildSnapshot(array $child, int $days, string $mode, bool $allowLlm): array
@@ -403,10 +1313,25 @@ class ChildReportService
         return $this->buildSnapshotFromScope($child, $this->buildRollingScope($days), $mode, $allowLlm);
     }
 
-    private function buildSnapshotFromScope(array $child, array $scope, string $mode, bool $allowLlm): array
+    private function buildSnapshotFromScope(
+        array $child,
+        array $scope,
+        string $mode,
+        bool $allowLlm,
+        ?array $messages = null,
+        ?array $incrementMessages = null
+    ): array
     {
         $series = $this->buildSeriesMap($scope['start_date'], $scope['end_date']);
         $childId = (int) $child['id'];
+
+        $messages = $messages ?? $this->reportModel->getConversationMessagesBetween($childId, $scope['start_at'], $scope['end_at']);
+        $reportMessages = $this->filterReportMessages($messages);
+        $childMessages = $this->filterMessagesByRole($reportMessages, 'user');
+
+        $incrementMessages = $incrementMessages ?? $messages;
+        $incrementReportMessages = $this->filterReportMessages($incrementMessages);
+        $incrementChildMessages = $this->filterMessagesByRole($incrementReportMessages, 'user');
 
         $this->mergeRows($series, $this->reportModel->getDailyLogins($childId, $scope['start_date'], $scope['end_date']), [
             'login_count' => 'login_count',
@@ -424,15 +1349,15 @@ class ChildReportService
             'used_minutes' => 'used_minutes',
         ]);
 
-        $messages = $this->reportModel->getRecentChildMessagesBetween($childId, $scope['start_at'], $scope['end_at'], 120);
         $summary = $this->buildSummary($series, $child);
-        $readiness = $this->computeContentReadiness($messages, $scope['days']);
-        $signalPacket = $this->analyzeSignals($messages, $summary, $scope['days']);
-        $analysis = $this->buildAnalysis($child, $readiness, $signalPacket, $scope['days'], $allowLlm);
+        $readiness = $this->computeContentReadiness($childMessages, $scope['days'], $incrementChildMessages);
+        $analysis = $this->buildAnalysis($child, $summary, $scope, $readiness, $reportMessages, $allowLlm);
 
         return [
-            'version' => 2,
-            'status' => $readiness['message_count'] > 0 ? 'ready' : 'insufficient_data',
+            'version' => 3,
+            'status' => !$readiness['eligible']
+                ? 'insufficient_data'
+                : ($readiness['can_generate'] ? 'ready' : 'awaiting_increment'),
             'generated_at' => AppTime::now()->format(DATE_ATOM),
             'generation_mode' => $mode,
             'risk_level' => $this->riskLevelFromAnalysis($analysis),
@@ -453,6 +1378,7 @@ class ChildReportService
                 'end_at' => AppTime::toIso8601($scope['end_at']),
                 'report_day' => $scope['report_day'],
             ],
+            'analysis_version' => self::REPORT_PROMPT_VERSION,
             'summary' => $summary,
             'insights' => $this->buildOverviewInsights($summary, $scope['days']),
             'series' => array_values($series),
@@ -461,18 +1387,43 @@ class ChildReportService
         ];
     }
 
-    private function buildAnalysis(array $child, array $readiness, array $signalPacket, int $days, bool $allowLlm): array
+    private function buildAnalysis(
+        array $child,
+        array $summary,
+        array $scope,
+        array $readiness,
+        array $messages,
+        bool $allowLlm
+    ): array
     {
         if (($readiness['message_count'] ?? 0) === 0) {
-            return $this->buildNoDataAnalysis($readiness, $days);
+            return $this->buildNoDataAnalysis($readiness, $scope['days']);
         }
 
-        $fallback = $this->createFallbackAnalysis($child, $readiness, $signalPacket, $days);
-        if (!$allowLlm || empty($readiness['recommended_sample_met'])) {
+        $signalPacket = $this->analyzeSignals(
+            $this->filterMessagesByRole($messages, 'user'),
+            $summary,
+            (int) ($scope['days'] ?? 0)
+        );
+        $fallback = $this->createFallbackAnalysis($child, $readiness, $signalPacket, $scope['days']);
+        if (!$allowLlm) {
             return $fallback;
         }
 
-        $payload = $this->requestLlmAnalysis($child, $readiness, $signalPacket, $days);
+        if (empty($readiness['can_generate'])) {
+            return $this->buildPreviewAnalysis($child, $summary, $scope, $readiness);
+        }
+
+        $payload = $this->requestLlmAnalysis(
+            $this->buildAiReportPacket($child, $summary, $scope, $readiness, $messages)
+        );
+
+        if ($payload === null) {
+            $fallback['source_detail'] = $this->lastAnalysisFailureReason
+                ?? ($fallback['source_detail'] ?? 'AI transcript analysis was unavailable or invalid, so this report uses local rule-based analysis.');
+            return $fallback;
+        }
+
         return $this->normalizeAnalysisPayload($payload ?? [], $fallback);
     }
 
@@ -559,51 +1510,60 @@ class ChildReportService
         return $summary;
     }
 
-    private function computeContentReadiness(array $messages, int $days): array
+    private function computeContentReadiness(array $messages, int $days, ?array $incrementMessages = null): array
     {
-        $messageCount = count($messages);
-        $characterCount = 0;
-        $uniqueDays = [];
+        $totals = $this->computeMessageStats($messages);
+        $increments = $this->computeMessageStats($incrementMessages ?? $messages);
 
-        foreach ($messages as $message) {
-            $content = trim((string) ($message['content'] ?? ''));
-            $characterCount += mb_strlen($content, 'UTF-8');
+        $recommendedSampleMet = $totals['message_count'] >= self::CONTENT_MIN_MESSAGES
+            && $totals['character_count'] >= self::CONTENT_MIN_CHARACTERS
+            && $totals['active_days'] >= self::CONTENT_MIN_ACTIVE_DAYS;
 
-            $createdAt = (string) ($message['created_at'] ?? '');
-            if ($createdAt !== '') {
-                $uniqueDays[substr($createdAt, 0, 10)] = true;
-            }
-        }
-
-        $recommendedSampleMet = $messageCount >= self::CONTENT_MIN_MESSAGES
-            && $characterCount >= self::CONTENT_MIN_CHARACTERS;
+        $incrementReady = $increments['message_count'] >= self::INCREMENT_MIN_MESSAGES
+            && $increments['character_count'] >= self::INCREMENT_MIN_CHARACTERS
+            && $increments['active_days'] >= self::INCREMENT_MIN_ACTIVE_DAYS;
 
         $confidence = 'none';
-        if ($messageCount > 0 && $characterCount > 0) {
+        if ($totals['message_count'] > 0 && $totals['character_count'] > 0) {
             $confidence = 'low';
-            if ($messageCount >= 35 && $characterCount >= 900) {
+            if ($totals['message_count'] >= 35 && $totals['character_count'] >= 1200 && $totals['active_days'] >= 4) {
                 $confidence = 'high';
-            } elseif ($messageCount >= 20 && $characterCount >= 450) {
+            } elseif ($totals['message_count'] >= 20 && $totals['character_count'] >= 600 && $totals['active_days'] >= 2) {
                 $confidence = 'medium';
             }
         }
 
+        $reason = 'Enough new child-authored chat is available for an AI report.';
+        if ($totals['message_count'] === 0) {
+            $reason = 'No recent child-authored chat messages were found in this report scope.';
+        } elseif (!$recommendedSampleMet) {
+            $reason = 'This scope still does not contain enough child-authored chat for a stable AI report.';
+        } elseif (!$incrementReady) {
+            $reason = 'There is not enough new child-authored chat since the last saved report to justify generating another AI report yet.';
+        }
+
         return [
-            'eligible' => $messageCount > 0,
-            'can_generate' => $messageCount > 0,
+            'eligible' => $totals['message_count'] > 0,
+            'can_generate' => $recommendedSampleMet && $incrementReady,
             'recommended_sample_met' => $recommendedSampleMet,
-            'message_count' => $messageCount,
-            'character_count' => $characterCount,
-            'active_days' => count($uniqueDays),
+            'increment_ready' => $incrementReady,
+            'message_count' => $totals['message_count'],
+            'character_count' => $totals['character_count'],
+            'active_days' => $totals['active_days'],
+            'conversation_count' => $totals['conversation_count'],
+            'increment_message_count' => $increments['message_count'],
+            'increment_character_count' => $increments['character_count'],
+            'increment_active_days' => $increments['active_days'],
+            'increment_conversation_count' => $increments['conversation_count'],
             'window_days' => $days,
             'minimum_messages' => self::CONTENT_MIN_MESSAGES,
             'minimum_characters' => self::CONTENT_MIN_CHARACTERS,
+            'minimum_active_days' => self::CONTENT_MIN_ACTIVE_DAYS,
+            'minimum_increment_messages' => self::INCREMENT_MIN_MESSAGES,
+            'minimum_increment_characters' => self::INCREMENT_MIN_CHARACTERS,
+            'minimum_increment_active_days' => self::INCREMENT_MIN_ACTIVE_DAYS,
             'confidence' => $confidence,
-            'reason' => $messageCount === 0
-                ? 'No recent child-authored chat messages were found in the selected date range.'
-                : ($recommendedSampleMet
-                    ? 'Enough recent messages are available for a fuller report.'
-                    : 'A limited recent sample is available. Interpret the report cautiously and watch for patterns over time.'),
+            'reason' => $reason,
         ];
     }
 
@@ -1038,6 +1998,7 @@ class ChildReportService
 
         return [
             'source' => 'rule_based',
+            'source_detail' => 'AI transcript analysis was unavailable or invalid, so this report uses local rule-based analysis.',
             'headline' => $headline,
             'sample_confidence' => $readiness['confidence'],
             'disclaimer' => 'This report summarizes recent chat patterns only. It is not a clinical diagnosis and should be read alongside offline behavior.',
@@ -1063,7 +2024,8 @@ class ChildReportService
     private function buildNoDataAnalysis(array $readiness, int $days): array
     {
         return [
-            'source' => 'rule_based',
+            'source' => 'no_data',
+            'source_detail' => 'There was not enough recent child-authored chat to send a usable content sample for AI analysis.',
             'headline' => 'No recent child-authored chat sample is available yet.',
             'sample_confidence' => $readiness['confidence'] ?? 'none',
             'disclaimer' => 'This report is not a diagnosis. It simply reflects that there was not enough recent child-authored chat in the selected window to analyze content patterns.',
@@ -1097,16 +2059,105 @@ class ChildReportService
         ];
     }
 
-    private function requestLlmAnalysis(array $child, array $readiness, array $signalPacket, int $days): ?array
+    private function requestLlmAnalysis(array $reportPacket): ?array
     {
-        $apiKey = Config::get('LLM_API_KEY', '');
-        $apiUrl = Config::get('LLM_API_URL', 'https://api.deepseek.com/v1/chat/completions');
-        $model = Config::get('LLM_MODEL', 'deepseek-chat');
+        return $this->requestJsonAnalysis(
+            $this->buildReportSystemPrompt(),
+            $reportPacket,
+            self::REPORT_REQUIRED_KEYS,
+            'child wellbeing report'
+        );
+    }
+
+    private function requestTrendLlmAnalysis(array $trendPacket): ?array
+    {
+        return $this->requestJsonAnalysis(
+            $this->buildTrendSystemPrompt(),
+            $trendPacket,
+            self::TREND_REQUIRED_KEYS,
+            'cumulative trend analysis'
+        );
+    }
+
+    private function requestJsonAnalysis(
+        string $systemPrompt,
+        array $packet,
+        array $requiredKeys,
+        string $analysisLabel
+    ): ?array
+    {
+        $this->lastAnalysisFailureReason = null;
+        $apiKey = trim((string) Config::get('LLM_API_KEY', ''));
+        $apiUrl = trim((string) Config::get('LLM_API_URL', 'https://api.deepseek.com/v1/chat/completions'));
+        $model = trim((string) Config::get('LLM_MODEL', 'deepseek-chat'));
+
+        if ($apiUrl === '') {
+            $apiUrl = 'https://api.deepseek.com/v1/chat/completions';
+        }
+
+        if ($model === '') {
+            $model = 'deepseek-chat';
+        }
 
         if ($apiKey === '') {
+            $this->lastAnalysisFailureReason = 'AI is not configured because `LLM_API_KEY` is missing.';
             return null;
         }
 
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+
+        $packetJson = json_encode($packet, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $attempts = [
+            [
+                'system' => $systemPrompt,
+                'user' => $packetJson,
+                'use_response_format' => true,
+            ],
+            [
+                'system' => $systemPrompt . "\nReturn exactly one valid JSON object with the required keys and no markdown, no explanation, and no extra wrapper keys.",
+                'user' => "Generate a {$analysisLabel} from this JSON packet. Return one JSON object only.\n" . $packetJson,
+                'use_response_format' => false,
+            ],
+        ];
+
+        foreach ($attempts as $index => $attempt) {
+            $response = $this->performJsonCompletionRequest(
+                $apiUrl,
+                $apiKey,
+                $model,
+                (string) $attempt['system'],
+                (string) $attempt['user'],
+                !empty($attempt['use_response_format'])
+            );
+
+            if ($response['content'] === null) {
+                $this->lastAnalysisFailureReason = $response['error'];
+                continue;
+            }
+
+            $payload = $this->extractJsonPayload($response['content'], $requiredKeys);
+            if ($payload !== null) {
+                return $payload;
+            }
+
+            $this->lastAnalysisFailureReason = $index === 0
+                ? 'AI returned text, but not valid report JSON. Retrying with stricter formatting instructions.'
+                : 'AI returned text, but not valid report JSON.';
+        }
+
+        return null;
+    }
+
+    private function performJsonCompletionRequest(
+        string $apiUrl,
+        string $apiKey,
+        string $model,
+        string $systemPrompt,
+        string $userContent,
+        bool $useResponseFormat
+    ): array {
         $payload = [
             'model' => $model,
             'temperature' => 0.2,
@@ -1115,25 +2166,19 @@ class ChildReportService
             'messages' => [
                 [
                     'role' => 'system',
-                    'content' => 'You write parent-facing child wellbeing reports from structured digests only. Never quote, reconstruct, or infer exact child wording. Never expose names of peers, schools, or identifiable details. Do not diagnose. Use cautious, concrete language. Return JSON only with keys: headline, sample_confidence, disclaimer, topic_overview, topics, interests, emotional_overview, wellbeing, risk_dimensions, thinking_patterns, protective_factors, parent_guidance, alerts.'
+                    'content' => $systemPrompt,
                 ],
                 [
                     'role' => 'user',
-                    'content' => json_encode([
-                        'child' => [
-                            'age_years' => $this->calculateAgeYears($child['birth_date'] ?? null),
-                            'gender' => $child['gender'] ?? null,
-                        ],
-                        'window_days' => $days,
-                        'sample' => $readiness,
-                        'structured_signals' => $signalPacket,
-                    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    'content' => $userContent,
                 ],
             ],
         ];
 
-        if (session_status() === PHP_SESSION_ACTIVE) {
-            session_write_close();
+        if ($useResponseFormat) {
+            $payload['response_format'] = [
+                'type' => 'json_object',
+            ];
         }
 
         $ch = curl_init($apiUrl);
@@ -1149,36 +2194,126 @@ class ChildReportService
             ],
         ]);
 
-        $response = curl_exec($ch);
+        $responseBody = curl_exec($ch);
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
         curl_close($ch);
 
-        if ($response === false || $curlError !== '' || $httpCode >= 400) {
-            return null;
+        if ($responseBody === false || $curlError !== '' || $httpCode >= 400) {
+            if ($curlError !== '') {
+                return [
+                    'content' => null,
+                    'error' => 'AI request failed before a response was received: ' . $curlError . '.',
+                ];
+            }
+
+            $decodedError = json_decode((string) $responseBody, true);
+            $message = $decodedError['error']['message']
+                ?? $decodedError['message']
+                ?? ('HTTP ' . $httpCode);
+
+            return [
+                'content' => null,
+                'error' => 'AI service returned an error: ' . trim((string) $message) . '.',
+            ];
         }
 
-        $decoded = json_decode($response, true);
+        $decoded = json_decode((string) $responseBody, true);
         $content = $decoded['choices'][0]['message']['content'] ?? null;
         if (!is_string($content) || trim($content) === '') {
-            return null;
+            return [
+                'content' => null,
+                'error' => 'AI returned an empty response.',
+            ];
         }
 
-        return $this->extractJsonPayload($content);
+        return [
+            'content' => $content,
+            'error' => null,
+        ];
     }
 
-    private function extractJsonPayload(string $content): ?array
+    private function buildReportSystemPrompt(): string
+    {
+        return implode("\n", [
+            'You are writing a parent-facing child wellbeing report from organized chat records and activity context.',
+            'You may read the raw transcript bundle, but your output must paraphrase only and summarize at theme level.',
+            'Child-authored messages are the primary evidence. Treat assistant replies as low-weight context only, roughly 0.2 compared with a child-authored message.',
+            'Do not let assistant wording dominate risk, topic, or emotional judgments when the child did not clearly express the same thing.',
+            'Never reveal verbatim quotes, unique wording, names, school identifiers, account handles, contact details, or anything that would reconstruct a raw message.',
+            'Do not use quotation marks, pseudo-quotes, or short quoted snippets from the transcript anywhere in the JSON.',
+            'Evidence fields must describe patterns abstractly, for example "repeated peer-rejection worries across several chats" rather than repeating a child phrase.',
+            'If you include any quoted or near-quoted child wording, the answer is invalid. Replace specific phrases with abstractions like harsh self-judgment, broad rejection beliefs, negative future expectations, or fear of being judged.',
+            'Do not diagnose. Use careful, evidence-based language such as "may", "appears", "suggests", or "not enough evidence".',
+            'Do not use simplistic keyword matching logic. Instead, reason over persistence across days, conversational context, repeated themes, change over time, coping style, conflict style, help-seeking, flexibility, emotional tone, and whether a signal stays isolated versus recurring.',
+            'Use a child mental-health warning-sign lens that pays attention to recurring sadness or hopelessness, harsh self-worth, anxiety or overwhelm, peer rejection or bullying stress, irritability or revenge framing, avoidance or withdrawal, sleep/body/food strain, risky behavior, secrecy around unsafe contact, and protective signals such as help-seeking, curiosity, empathy, supportive relationships, and future orientation.',
+            'For aggression or violence-related content, distinguish brief frustration, fantasy, roleplay, or hypothetical language from repeated hostile intent, target fixation, planning, access-to-weapon talk, or escalation across days.',
+            'For self-harm or hopelessness content, distinguish passing dramatic language from repeated or direct safety concern; elevate only when the transcript provides meaningful evidence.',
+            'Younger children can use exaggerated language loosely. Do not over-interpret single dramatic phrases without corroborating context.',
+            'Separate concerns into: risk dimensions, thinking patterns, protective factors, strengths, watch points, and parent guidance.',
+            'If evidence is weak, lower confidence and say so clearly.',
+            'Treat roleplay, hypothetical questions, jokes, and one-off curiosity carefully; do not overstate them as real-world intent without stronger evidence.',
+            'Keep every field concise, concrete, privacy-preserving, and useful to a parent.',
+            'Prefer 2-5 items per list. Omit weak items instead of padding.',
+            'Alerts should be reserved for time-sensitive or clearly elevated concerns; if there is no meaningful alert, return an empty array.',
+            'Return JSON only.',
+            'Required JSON keys:',
+            'headline: string',
+            'sample_confidence: "none"|"low"|"medium"|"high"',
+            'disclaimer: string',
+            'topic_overview: string',
+            'topics: array of {name:string, summary:string}',
+            'interests: array of {name:string, why_it_matters:string}',
+            'emotional_overview: {summary:string, supporting_signals:string[]}',
+            'wellbeing: {summary:string, strengths:string[], watch_points:string[]}',
+            'risk_dimensions: array of {name:string, level:"low"|"medium"|"high", summary:string, evidence:string, why_it_matters:string, parent_action:string}',
+            'thinking_patterns: array of {name:string, level:"low"|"medium"|"high", summary:string, evidence:string}',
+            'protective_factors: array of {name:string, summary:string}',
+            'parent_guidance: string[]',
+            'alerts: array of {level:"low"|"medium"|"high", title:string, detail:string}',
+        ]);
+    }
+
+    private function buildTrendSystemPrompt(): string
+    {
+        return implode("\n", [
+            'You are writing a parent-facing cumulative trend analysis across multiple saved child wellbeing reports and retained chat context.',
+            'You may read the retained transcript bundle and report digests, but your output must paraphrase only and summarize at pattern level.',
+            'Child-authored messages are the primary evidence. Treat assistant replies as low-weight context only, roughly 0.2 compared with a child-authored message.',
+            'Do not let assistant wording dominate trend, risk, or topic conclusions unless the child repeatedly expressed the same signal.',
+            'Never reveal verbatim quotes, unique wording, names, school identifiers, account handles, contact details, or anything that would reconstruct a raw message.',
+            'Do not use quotation marks, pseudo-quotes, or short quoted snippets from the transcript anywhere in the JSON.',
+            'Do not diagnose. Use careful, evidence-based language such as "may", "appears", "suggests", or "not enough evidence".',
+            'Focus on change over time: what intensified, eased, stayed persistent, newly appeared, or remained protective across the selected reports.',
+            'Distinguish stable multi-report patterns from one-off events. Treat a single selected report as a snapshot, not a true long-term trend.',
+            'For aggression, self-harm, secrecy, or other elevated-risk themes, avoid overstatement unless there is repeated or clearly meaningful evidence across the selected material.',
+            'Keep every field concise, concrete, privacy-preserving, and useful to a parent.',
+            'Prefer 2-6 items per list. Omit weak items instead of padding.',
+            'Return JSON only.',
+            'Required JSON keys:',
+            'headline: string',
+            'summary: string',
+            'risk_trajectory: {direction:"single_snapshot"|"rising"|"easing"|"stable", level:"low"|"medium"|"high", summary:string}',
+            'recurring_risks: array of {name:string, level:"low"|"medium"|"high", summary:string, reports:int}',
+            'thinking_trends: array of {name:string, level:"low"|"medium"|"high", summary:string, reports:int}',
+            'protective_trends: array of {name:string, summary:string, reports:int}',
+            'topic_trends: array of {name:string, summary:string, reports:int}',
+            'parent_guidance: string[]',
+        ]);
+    }
+
+    private function extractJsonPayload(string $content, array $requiredKeys = []): ?array
     {
         $trimmed = trim($content);
         $decoded = json_decode($trimmed, true);
         if (is_array($decoded)) {
-            return $decoded;
+            return $this->coerceJsonPayload($decoded, $requiredKeys);
         }
 
         if (preg_match('/```json\s*(\{.*\})\s*```/su', $trimmed, $matches)) {
             $decoded = json_decode($matches[1], true);
             if (is_array($decoded)) {
-                return $decoded;
+                return $this->coerceJsonPayload($decoded, $requiredKeys);
             }
         }
 
@@ -1187,11 +2322,62 @@ class ChildReportService
         if ($start !== false && $end !== false && $end > $start) {
             $decoded = json_decode(substr($trimmed, $start, $end - $start + 1), true);
             if (is_array($decoded)) {
-                return $decoded;
+                return $this->coerceJsonPayload($decoded, $requiredKeys);
             }
         }
 
         return null;
+    }
+
+    private function coerceJsonPayload(array $payload, array $requiredKeys): ?array
+    {
+        if ($requiredKeys === []) {
+            return $payload;
+        }
+
+        $bestScore = 0;
+        $candidate = $this->findBestJsonPayloadCandidate($payload, $requiredKeys, $bestScore);
+        if ($candidate === null) {
+            return null;
+        }
+
+        $minimumAcceptedScore = max(4, (int) ceil(count($requiredKeys) / 2));
+        return $bestScore >= $minimumAcceptedScore ? $candidate : null;
+    }
+
+    private function findBestJsonPayloadCandidate(array $payload, array $requiredKeys, int &$bestScore): ?array
+    {
+        $bestCandidate = null;
+        $score = $this->countPayloadKeyMatches($payload, $requiredKeys);
+        if ($score > $bestScore) {
+            $bestScore = $score;
+            $bestCandidate = $payload;
+        }
+
+        foreach ($payload as $value) {
+            if (!is_array($value)) {
+                continue;
+            }
+
+            $candidate = $this->findBestJsonPayloadCandidate($value, $requiredKeys, $bestScore);
+            if ($candidate !== null) {
+                $bestCandidate = $candidate;
+            }
+        }
+
+        return $bestCandidate;
+    }
+
+    private function countPayloadKeyMatches(array $payload, array $requiredKeys): int
+    {
+        $matches = 0;
+        foreach ($requiredKeys as $key) {
+            if (array_key_exists($key, $payload)) {
+                $matches++;
+            }
+        }
+
+        return $matches;
     }
 
     private function normalizeAnalysisPayload(array $payload, array $fallback): array
@@ -1215,10 +2401,187 @@ class ChildReportService
             $analysis['emotional_overview'] = $fallback['emotional_overview'];
         }
 
-        $analysis['source'] = $payload !== [] ? 'llm_structured' : $fallback['source'];
+        foreach (['risk_dimensions', 'thinking_patterns'] as $leveledListKey) {
+            foreach ($analysis[$leveledListKey] as $index => $item) {
+                if (!is_array($item)) {
+                    $analysis[$leveledListKey][$index] = $fallback[$leveledListKey][$index] ?? [];
+                    continue;
+                }
+
+                $level = (string) ($item['level'] ?? 'low');
+                if (!in_array($level, ['low', 'medium', 'high'], true)) {
+                    $analysis[$leveledListKey][$index]['level'] = 'low';
+                }
+            }
+        }
+
+        foreach ($analysis['alerts'] as $index => $item) {
+            if (!is_array($item)) {
+                $analysis['alerts'][$index] = $fallback['alerts'][$index] ?? [];
+                continue;
+            }
+
+            $level = (string) ($item['level'] ?? 'low');
+            if (!in_array($level, ['low', 'medium', 'high'], true)) {
+                $analysis['alerts'][$index]['level'] = 'low';
+            }
+        }
+
+        $analysis['source'] = $payload !== [] ? 'llm_transcript' : $fallback['source'];
+        $analysis['source_detail'] = $payload !== []
+            ? 'Generated by AI from the retained transcript bundle and activity summary.'
+            : ($fallback['source_detail'] ?? 'This report uses fallback analysis.');
         $analysis['disclaimer'] = 'This report summarizes recent chat patterns only. It is not a clinical diagnosis and should be read alongside offline behavior.';
+        $analysis['prompt_version'] = self::REPORT_PROMPT_VERSION;
+        $analysis = $this->sanitizeAnalysisPayload($analysis);
 
         return $analysis;
+    }
+
+    private function validateTrendAnalysisPayload(array $analysis): array
+    {
+        $errors = [];
+        $requiredKeys = self::TREND_REQUIRED_KEYS;
+
+        foreach ($requiredKeys as $key) {
+            if (!array_key_exists($key, $analysis)) {
+                $errors[] = "Missing key: {$key}";
+            }
+        }
+
+        if (isset($analysis['risk_trajectory']) && !is_array($analysis['risk_trajectory'])) {
+            $errors[] = 'risk_trajectory must be an object.';
+        }
+
+        foreach (['recurring_risks', 'thinking_trends', 'protective_trends', 'topic_trends', 'parent_guidance'] as $key) {
+            if (isset($analysis[$key]) && !is_array($analysis[$key])) {
+                $errors[] = "{$key} must be an array.";
+            }
+        }
+
+        if (isset($analysis['risk_trajectory']['direction']) && !in_array($analysis['risk_trajectory']['direction'], ['single_snapshot', 'rising', 'easing', 'stable'], true)) {
+            $errors[] = 'Invalid risk_trajectory.direction value.';
+        }
+
+        if (isset($analysis['risk_trajectory']['level']) && !in_array($analysis['risk_trajectory']['level'], ['low', 'medium', 'high'], true)) {
+            $errors[] = 'Invalid risk_trajectory.level value.';
+        }
+
+        return [
+            'valid' => $errors === [],
+            'errors' => $errors,
+        ];
+    }
+
+    private function normalizeTrendAnalysisPayload(array $payload, array $fallback): array
+    {
+        $analysis = $fallback;
+        foreach ($payload as $key => $value) {
+            $analysis[$key] = $value;
+        }
+
+        foreach (['recurring_risks', 'thinking_trends', 'protective_trends', 'topic_trends', 'parent_guidance'] as $listKey) {
+            if (!isset($analysis[$listKey]) || !is_array($analysis[$listKey])) {
+                $analysis[$listKey] = $fallback[$listKey];
+            }
+        }
+
+        if (!isset($analysis['risk_trajectory']) || !is_array($analysis['risk_trajectory'])) {
+            $analysis['risk_trajectory'] = $fallback['risk_trajectory'];
+        }
+
+        $direction = (string) ($analysis['risk_trajectory']['direction'] ?? $fallback['risk_trajectory']['direction'] ?? 'stable');
+        if (!in_array($direction, ['single_snapshot', 'rising', 'easing', 'stable'], true)) {
+            $analysis['risk_trajectory']['direction'] = $fallback['risk_trajectory']['direction'] ?? 'stable';
+        }
+
+        $level = (string) ($analysis['risk_trajectory']['level'] ?? $fallback['risk_trajectory']['level'] ?? 'low');
+        if (!in_array($level, ['low', 'medium', 'high'], true)) {
+            $analysis['risk_trajectory']['level'] = $fallback['risk_trajectory']['level'] ?? 'low';
+        }
+
+        foreach (['recurring_risks', 'thinking_trends'] as $leveledListKey) {
+            foreach ($analysis[$leveledListKey] as $index => $item) {
+                if (!is_array($item)) {
+                    $analysis[$leveledListKey][$index] = $fallback[$leveledListKey][$index] ?? [];
+                    continue;
+                }
+
+                $itemLevel = (string) ($item['level'] ?? 'low');
+                if (!in_array($itemLevel, ['low', 'medium', 'high'], true)) {
+                    $analysis[$leveledListKey][$index]['level'] = 'low';
+                }
+
+                $analysis[$leveledListKey][$index]['reports'] = max(1, (int) ($item['reports'] ?? ($fallback[$leveledListKey][$index]['reports'] ?? 1)));
+            }
+        }
+
+        foreach (['protective_trends', 'topic_trends'] as $countedListKey) {
+            foreach ($analysis[$countedListKey] as $index => $item) {
+                if (!is_array($item)) {
+                    $analysis[$countedListKey][$index] = $fallback[$countedListKey][$index] ?? [];
+                    continue;
+                }
+
+                $analysis[$countedListKey][$index]['reports'] = max(1, (int) ($item['reports'] ?? ($fallback[$countedListKey][$index]['reports'] ?? 1)));
+            }
+        }
+
+        $analysis['source'] = $payload !== [] ? 'llm_trend' : $fallback['source'];
+        $analysis['source_detail'] = $payload !== []
+            ? 'Generated by AI from the selected saved reports and their retained transcript context.'
+            : ($fallback['source_detail'] ?? 'This cumulative view uses fallback analysis.');
+        $analysis['generated_at'] = AppTime::now()->format(DATE_ATOM);
+        $analysis['prompt_version'] = self::TREND_PROMPT_VERSION;
+        $analysis = $this->sanitizeAnalysisPayload($analysis);
+
+        return $analysis;
+    }
+
+    private function sanitizeAnalysisPayload(array $analysis): array
+    {
+        foreach ($analysis as $key => $value) {
+            $analysis[$key] = $this->sanitizeAnalysisValue($value);
+        }
+
+        return $analysis;
+    }
+
+    private function sanitizeAnalysisValue($value)
+    {
+        if (is_array($value)) {
+            foreach ($value as $key => $item) {
+                $value[$key] = $this->sanitizeAnalysisValue($item);
+            }
+
+            return $value;
+        }
+
+        if (!is_string($value)) {
+            return $value;
+        }
+
+        $sanitized = preg_replace_callback(
+            "/\"([^\"]{1,80})\"|“([^”]{1,80})”|'([^']{1,80})'/u",
+            static function (array $matches): string {
+                $fragment = '';
+                foreach (array_slice($matches, 1) as $candidate) {
+                    if ($candidate !== null && $candidate !== '') {
+                        $fragment = $candidate;
+                        break;
+                    }
+                }
+
+                return trim($fragment);
+            },
+            $value
+        );
+
+        $sanitized = str_replace(['“', '”'], '', $sanitized ?? $value);
+        $sanitized = preg_replace("/(?<!\\pL)'|'(?!\\pL)/u", '', $sanitized ?? $value);
+        $sanitized = preg_replace('/\s{2,}/u', ' ', $sanitized ?? $value);
+
+        return trim((string) ($sanitized ?? $value));
     }
 
     private function calculateAgeYears(?string $birthDate): ?int
@@ -1238,12 +2601,15 @@ class ChildReportService
 
     private function formatSettings(array $settings): array
     {
+        $periodDays = $this->resolveAutoReportPeriodDays($settings);
+
         return [
             'child_id' => (int) $settings['child_id'],
             'parent_id' => (int) $settings['parent_id'],
             'auto_generate_enabled' => !empty($settings['auto_generate_enabled']),
-            'auto_generate_frequency_days' => (int) ($settings['auto_generate_frequency_days'] ?? 7),
-            'auto_generate_window_days' => (int) ($settings['auto_generate_window_days'] ?? 14),
+            'auto_generate_period_days' => $periodDays,
+            'auto_generate_frequency_days' => $periodDays,
+            'auto_generate_window_days' => $periodDays,
             'next_report_due_at' => AppTime::toIso8601($settings['next_report_due_at'] ?? null),
             'last_report_generated_at' => AppTime::toIso8601($settings['last_report_generated_at'] ?? null),
         ];
@@ -1308,7 +2674,28 @@ class ChildReportService
         return $decoded;
     }
 
-    private function buildTrendAnalysis(array $reports, array $records, array $messageSummary): array
+    private function buildTrendAnalysis(
+        array $child,
+        array $reports,
+        array $records,
+        array $messageSummary,
+        array $retainedMessages
+    ): array
+    {
+        $fallback = $this->buildRuleBasedTrendAnalysis($reports, $records, $messageSummary);
+        $packet = $this->buildAiTrendPacket($child, $reports, $records, $messageSummary, $retainedMessages);
+        $payload = $this->requestTrendLlmAnalysis($packet);
+
+        if ($payload === null) {
+            $fallback['source_detail'] = $this->lastAnalysisFailureReason
+                ?? ($fallback['source_detail'] ?? 'AI cumulative analysis was unavailable or invalid, so this view uses local rule-based trend analysis.');
+            return $fallback;
+        }
+
+        return $this->normalizeTrendAnalysisPayload($payload, $fallback);
+    }
+
+    private function buildRuleBasedTrendAnalysis(array $reports, array $records, array $messageSummary): array
     {
         $reportCount = count($reports);
         $dateSpan = $this->buildTrendDateSpan($reports, $records, $messageSummary);
@@ -1340,6 +2727,7 @@ class ChildReportService
 
         return [
             'source' => 'rule_based',
+            'source_detail' => 'AI cumulative analysis was unavailable or invalid, so this view uses local rule-based trend analysis.',
             'generated_at' => AppTime::now()->format(DATE_ATOM),
             'selected_report_count' => $reportCount,
             'date_span' => $dateSpan,
@@ -1353,6 +2741,145 @@ class ChildReportService
             'topic_trends' => $topicTrends,
             'parent_guidance' => $guidance,
         ];
+    }
+
+    private function buildAiTrendPacket(
+        array $child,
+        array $reports,
+        array $records,
+        array $messageSummary,
+        array $retainedMessages
+    ): array {
+        $manualReports = 0;
+        $autoReports = 0;
+
+        foreach ($records as $record) {
+            if (($record['generation_mode'] ?? 'manual') === 'auto') {
+                $autoReports++;
+            } else {
+                $manualReports++;
+            }
+        }
+
+        return [
+            'prompt_version' => self::TREND_PROMPT_VERSION,
+            'child' => [
+                'age_years' => $this->calculateAgeYears($child['birth_date'] ?? null),
+                'gender' => $child['gender'] ?? null,
+                'last_login_at' => AppTime::toIso8601($child['last_login_at'] ?? null),
+            ],
+            'selection_overview' => [
+                'selected_report_count' => count($records),
+                'manual_reports' => $manualReports,
+                'auto_reports' => $autoReports,
+                'date_span' => $this->buildTrendDateSpan($reports, $records, $messageSummary),
+            ],
+            'message_weighting' => $this->buildMessageWeightingMeta(
+                (int) ($messageSummary['child_message_count'] ?? 0),
+                (int) ($messageSummary['assistant_message_count'] ?? 0)
+            ),
+            'retained_message_summary' => [
+                'total_message_count' => (int) ($messageSummary['total_message_count'] ?? 0),
+                'child_message_count' => (int) ($messageSummary['child_message_count'] ?? 0),
+                'assistant_message_count' => (int) ($messageSummary['assistant_message_count'] ?? 0),
+                'active_days' => (int) ($messageSummary['active_days'] ?? 0),
+                'first_message_at' => AppTime::toIso8601($messageSummary['first_message_at'] ?? null),
+                'last_message_at' => AppTime::toIso8601($messageSummary['last_message_at'] ?? null),
+            ],
+            'report_digests' => $this->buildTrendReportDigests($reports, $records),
+            'transcript_bundle' => $this->buildTranscriptBundle($retainedMessages),
+        ];
+    }
+
+    private function buildTrendReportDigests(array $reports, array $records): array
+    {
+        $digests = [];
+
+        foreach ($reports as $index => $report) {
+            $record = $records[$index] ?? [];
+            $analysis = $report['analysis'] ?? [];
+            $scope = $report['scope'] ?? [];
+            $digests[] = [
+                'report_id' => (int) ($record['id'] ?? 0),
+                'report_day' => $record['report_day'] ?? ($scope['report_day'] ?? null),
+                'generation_mode' => $record['generation_mode'] ?? ($report['generation_mode'] ?? 'manual'),
+                'risk_level' => $record['risk_level'] ?? ($report['risk_level'] ?? $this->riskLevelFromAnalysis($analysis)),
+                'sample_confidence' => $record['confidence'] ?? ($analysis['sample_confidence'] ?? 'none'),
+                'generated_at' => $report['generated_at'] ?? ($record['updated_at'] ?? $record['created_at'] ?? null),
+                'scope' => [
+                    'start_at' => $scope['start_at'] ?? $record['scope_started_at'] ?? null,
+                    'end_at' => $scope['end_at'] ?? $record['scope_ended_at'] ?? $record['updated_at'] ?? null,
+                ],
+                'headline' => trim((string) ($analysis['headline'] ?? $record['headline'] ?? '')),
+                'topic_overview' => trim((string) ($analysis['topic_overview'] ?? '')),
+                'emotional_summary' => trim((string) ($analysis['emotional_overview']['summary'] ?? '')),
+                'wellbeing_summary' => trim((string) ($analysis['wellbeing']['summary'] ?? '')),
+                'risk_dimensions' => $this->compactTrendItems($analysis['risk_dimensions'] ?? [], true),
+                'thinking_patterns' => $this->compactTrendItems($analysis['thinking_patterns'] ?? [], true),
+                'protective_factors' => $this->compactTrendItems($analysis['protective_factors'] ?? [], false),
+                'topics' => $this->compactTrendItems($analysis['topics'] ?? [], false),
+                'parent_guidance' => $this->normalizeStringList($analysis['parent_guidance'] ?? [], 4),
+            ];
+        }
+
+        return $digests;
+    }
+
+    private function compactTrendItems(array $items, bool $withLevel, int $limit = 4): array
+    {
+        $result = [];
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $name = trim((string) ($item['name'] ?? $item['title'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+
+            $summary = trim((string) ($item['summary'] ?? $item['why_it_matters'] ?? $item['evidence'] ?? ''));
+            $entry = [
+                'name' => $name,
+                'summary' => $summary,
+            ];
+
+            if ($withLevel) {
+                $level = (string) ($item['level'] ?? 'low');
+                $entry['level'] = in_array($level, ['low', 'medium', 'high'], true) ? $level : 'low';
+            }
+
+            $result[] = $entry;
+            if (count($result) >= $limit) {
+                break;
+            }
+        }
+
+        return $result;
+    }
+
+    private function normalizeStringList(array $items, int $limit = 6): array
+    {
+        $result = [];
+
+        foreach ($items as $item) {
+            if (!is_string($item)) {
+                continue;
+            }
+
+            $text = trim($item);
+            if ($text === '') {
+                continue;
+            }
+
+            $result[] = $text;
+            if (count($result) >= $limit) {
+                break;
+            }
+        }
+
+        return $result;
     }
 
     private function buildTrendDateSpan(array $reports, array $records, array $messageSummary): array

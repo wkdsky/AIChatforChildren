@@ -373,6 +373,13 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       border: 1px solid #fecaca;
     }
 
+    .section-alert.info,
+    #alertMessage.info {
+      background: #dbeafe;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+    }
+
     .modal {
       position: fixed;
       inset: 0;
@@ -629,7 +636,9 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
     }
 
     .report-modal-content {
-      max-width: 1280px;
+      width: min(97vw, 1520px);
+      max-width: 1520px;
+      max-height: 90vh;
     }
 
     .report-toolbar {
@@ -673,15 +682,16 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
 
     .report-shell {
       display: grid;
-      grid-template-columns: 320px minmax(0, 1fr);
-      gap: 18px;
+      grid-template-columns: minmax(290px, 330px) minmax(0, 1fr);
+      gap: 28px;
+      align-items: start;
     }
 
     .report-sidebar,
     .report-main {
       display: flex;
       flex-direction: column;
-      gap: 18px;
+      gap: 16px;
       min-width: 0;
     }
 
@@ -690,14 +700,14 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       border-radius: 18px;
       background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
       box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
-      padding: 18px;
+      padding: 16px;
     }
 
     .report-settings-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: 1fr;
       gap: 10px;
-      margin: 14px 0;
+      margin: 12px 0;
     }
 
     .report-settings-grid label {
@@ -713,9 +723,10 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       width: 100%;
       border: 1px solid #d7dbe8;
       border-radius: 12px;
-      padding: 10px 12px;
+      padding: 9px 11px;
       background: #fff;
       color: #0f172a;
+      font-size: 13px;
     }
 
     .report-toggle-row {
@@ -726,27 +737,78 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       font-weight: 600;
     }
 
+    .report-usage-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .report-usage-item {
+      width: 100%;
+      border: 1px solid #dbeafe;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      border-radius: 16px;
+      padding: 12px;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      color: #0f172a;
+    }
+
+    .report-usage-item:hover,
+    .report-usage-item.active {
+      border-color: #60a5fa;
+      box-shadow: 0 12px 28px rgba(59, 130, 246, 0.15);
+      background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+    }
+
+    .report-usage-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: #1d4ed8;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .report-usage-title {
+      display: block;
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .report-usage-meta {
+      color: #475569;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
     .report-history-list {
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      max-height: 520px;
+      gap: 8px;
+      max-height: calc(90vh - 320px);
       overflow-y: auto;
-      margin-top: 14px;
+      margin-top: 10px;
+      padding-right: 4px;
     }
 
     .report-history-item {
       width: 100%;
       border: 1px solid #e2e8f0;
       background: #fff;
-      border-radius: 16px;
-      padding: 12px 14px;
+      border-radius: 14px;
+      padding: 10px 11px;
       text-align: left;
       cursor: pointer;
       transition: all 0.2s ease;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 4px;
       color: #0f172a;
     }
 
@@ -777,14 +839,15 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
     .report-history-row {
       display: flex;
       align-items: flex-start;
-      gap: 10px;
+      gap: 8px;
     }
 
     .report-history-body {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 4px;
       min-width: 0;
+      width: 100%;
     }
 
     .report-history-check {
@@ -833,18 +896,84 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
 
     .report-history-title {
       font-weight: 700;
-      font-size: 14px;
+      font-size: 13px;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
 
     .report-history-meta {
       color: #64748b;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .report-history-topline,
+    .report-history-footline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .report-history-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .report-history-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      color: #475569;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .report-history-pill.manual {
+      background: #eef2ff;
+      border-color: #c7d2fe;
+      color: #4338ca;
+    }
+
+    .report-history-pill.auto {
+      background: #ecfeff;
+      border-color: #bae6fd;
+      color: #0369a1;
+    }
+
+    .report-history-time {
+      color: #64748b;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .report-history-scope {
+      color: #334155;
       font-size: 12px;
       line-height: 1.5;
     }
 
+    .report-history-divider {
+      width: 100%;
+      height: 1px;
+      background: #eef2f7;
+      margin: 2px 0;
+    }
+
     .report-summary-grid {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 12px;
     }
 
@@ -884,13 +1013,147 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
     }
 
     .report-panel {
-      padding: 18px;
+      padding: 20px 22px;
+    }
+
+    .report-sidebar .btn-inline {
+      padding: 9px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      min-height: 40px;
+    }
+
+    .report-panel-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      width: 100%;
+    }
+
+    .report-panel-actions .btn-inline {
+      width: 100%;
+    }
+
+    .report-history-caption {
+      margin-top: 6px;
+    }
+
+    .report-sidebar-footer {
+      margin-top: auto;
+      padding-top: 8px;
+    }
+
+    .report-settings-anchor {
+      position: relative;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .report-auto-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #334155;
+      border-radius: 999px;
+      padding: 7px 11px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .report-auto-badge:hover {
+      border-color: #94a3b8;
+      background: #f8fafc;
+    }
+
+    .report-settings-popover {
+      position: absolute;
+      left: 0;
+      bottom: calc(100% + 10px);
+      width: min(360px, calc(100vw - 32px));
+      border: 1px solid #dbe2ea;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 18px 38px rgba(15, 23, 42, 0.16);
+      padding: 14px;
+      z-index: 15;
+    }
+
+    .report-settings-popover-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+      color: #0f172a;
+    }
+
+    .report-settings-close {
+      border: none;
+      background: transparent;
+      color: #64748b;
+      font-size: 20px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .report-source-banner {
+      margin-bottom: 14px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid #dbeafe;
+      background: #eff6ff;
+      color: #1e3a8a;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .report-source-banner strong {
+      display: block;
+      margin-bottom: 2px;
+      font-size: 12px;
+    }
+
+    .report-source-banner.ai {
+      background: #ecfeff;
+      border-color: #bae6fd;
+      color: #0f766e;
+    }
+
+    .report-source-banner.fallback {
+      background: #fff7ed;
+      border-color: #fed7aa;
+      color: #9a3412;
+    }
+
+    .report-source-banner.preview {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+      color: #334155;
+    }
+
+    .report-source-banner.no-data {
+      background: #f8fafc;
+      border-color: #e2e8f0;
+      color: #475569;
+    }
+
+    .report-source-banner.usage {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      color: #1d4ed8;
     }
 
     .report-panel-header {
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
       gap: 12px;
       flex-wrap: wrap;
       margin-bottom: 16px;
@@ -926,6 +1189,36 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       align-items: end;
       min-height: 260px;
       padding-top: 10px;
+    }
+
+    .usage-bucket-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      padding-top: 4px;
+    }
+
+    .usage-bucket-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      background: #fff;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .usage-bucket-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .usage-bucket-meta {
+      color: #475569;
+      font-size: 12px;
+      line-height: 1.5;
     }
 
     .report-bar-col {
@@ -1179,6 +1472,10 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       .danger-btn,
       .btn-inline {
         width: 100%;
+      }
+
+      .report-panel-actions {
+        grid-template-columns: 1fr;
       }
     }
   </style>
@@ -1453,7 +1750,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       </div>
       <div class="modal-body">
         <div class="report-toolbar">
-          <div class="report-helper-text" id="reportGeneratedHint">Saved reports appear on the left. Open one or generate a new report.</div>
+          <div class="report-helper-text" id="reportGeneratedHint">Usage habit report updates automatically once per day.</div>
         </div>
 
         <div id="childReportLoading" class="empty-state" style="display: none;">
@@ -1465,37 +1762,14 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
           <aside class="report-sidebar">
             <section class="report-sidebar-card">
               <div class="report-panel-header">
-                <h3>Auto Reports</h3>
+                <h3>Usage Habit</h3>
               </div>
-              <label class="report-toggle-row" for="autoReportEnabled">
-                <input type="checkbox" id="autoReportEnabled">
-                <span>Generate automatically</span>
-              </label>
-              <div class="report-settings-grid">
-                <label for="autoReportFrequency">
-                  <span>Every</span>
-                  <select id="autoReportFrequency">
-                    <option value="7">7 days</option>
-                    <option value="14">14 days</option>
-                    <option value="30">30 days</option>
-                  </select>
-                </label>
-                <label for="autoReportWindow">
-                  <span>Window</span>
-                  <select id="autoReportWindow">
-                    <option value="7">7 days</option>
-                    <option value="14">14 days</option>
-                    <option value="30">30 days</option>
-                  </select>
-                </label>
-              </div>
-              <button type="button" class="btn btn-inline" id="saveReportSettingsBtn">Save Schedule</button>
-              <div class="report-helper-text" id="autoReportMeta"></div>
+              <div id="usageHabitList" class="report-usage-list"></div>
             </section>
 
             <section class="report-sidebar-card">
               <div class="report-panel-header">
-                <h3>History</h3>
+                <h3>Chat Reports</h3>
                 <div class="report-panel-actions">
                   <button type="button" class="btn btn-inline btn-secondary" id="generateContentReportBtn" onclick="generateContentReport()">
                     Generate Now
@@ -1518,8 +1792,40 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
                   <button type="button" class="btn btn-inline btn-secondary" onclick="toggleTrendSelectionMode(false)">Cancel</button>
                 </div>
               </div>
+              <div class="report-helper-text report-history-caption" id="reportHistoryMeta"></div>
               <div class="report-history-list" id="childReportHistoryList"></div>
             </section>
+
+            <div class="report-sidebar-footer">
+              <div class="report-settings-anchor">
+                <button type="button" class="report-auto-badge" id="autoReportSettingsTrigger" onclick="toggleAutoReportSettings()">
+                  <i class="fas fa-gear"></i>
+                  <span>Auto Reports</span>
+                </button>
+                <div class="report-settings-popover" id="autoReportSettingsPopover" style="display: none;">
+                  <div class="report-settings-popover-header">
+                    <strong>Auto Reports</strong>
+                    <button type="button" class="report-settings-close" onclick="toggleAutoReportSettings(false)">&times;</button>
+                  </div>
+                  <label class="report-toggle-row" for="autoReportEnabled">
+                    <input type="checkbox" id="autoReportEnabled">
+                    <span>Generate automatically</span>
+                  </label>
+                  <div class="report-settings-grid">
+                    <label for="autoReportFrequency">
+                      <span>Period</span>
+                      <select id="autoReportFrequency">
+                        <option value="7">7 days</option>
+                        <option value="14">14 days</option>
+                        <option value="30">30 days</option>
+                      </select>
+                    </label>
+                  </div>
+                  <button type="button" class="btn btn-inline" id="saveReportSettingsBtn">Save Schedule</button>
+                  <div class="report-helper-text" id="autoReportMeta"></div>
+                </div>
+              </div>
+            </div>
           </aside>
 
           <div class="report-main">
@@ -1527,11 +1833,11 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
 
             <section class="report-panel">
               <div class="report-panel-header">
-                <h3>Recent Activity</h3>
+                <h3 id="childReportActivityTitle">Recent Activity</h3>
                 <div class="report-metric-switch">
-                  <button type="button" class="report-switch-btn active" data-report-metric="child_message_count">Messages</button>
-                  <button type="button" class="report-switch-btn" data-report-metric="login_count">Logins</button>
-                  <button type="button" class="report-switch-btn" data-report-metric="used_minutes">Minutes</button>
+                  <button type="button" class="report-switch-btn active" data-report-switch-slot="0">Messages</button>
+                  <button type="button" class="report-switch-btn" data-report-switch-slot="1">Logins</button>
+                  <button type="button" class="report-switch-btn" data-report-switch-slot="2">Minutes</button>
                 </div>
               </div>
               <div id="childReportInsights" class="report-insights"></div>
@@ -1541,8 +1847,9 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
             <section class="report-panel">
               <div class="report-panel-header">
                 <h3>Report Details</h3>
-                <div class="report-helper-text" id="selectedReportMeta">No report selected</div>
+                <div class="report-helper-text" id="selectedReportMeta"></div>
               </div>
+              <div id="reportSourceMeta"></div>
               <div id="childReportSampleStatus" class="report-content-status"></div>
               <div id="childReportAnalysis"></div>
             </section>
@@ -1575,6 +1882,8 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
     let reportState = {
       childId: null,
       metric: 'child_message_count',
+      usagePeriod: 'day',
+      usageReport: null,
       activeSnapshot: null,
       activeRecord: null,
       activeSource: 'empty',
@@ -1590,10 +1899,182 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
     };
     const TIME_MINUTE_OPTIONS = ['00', '10', '20', '30', '40', '50'];
 
-    function setActiveReportMetricButton(metric) {
-      document.querySelectorAll('[data-report-metric]').forEach(item => {
-        item.classList.toggle('active', item.dataset.reportMetric === metric);
+    function getSavedReportStorageKey(childId) {
+      return `child-report-last-opened:${childId}`;
+    }
+
+    function persistSavedReportSelection(childId, reportId) {
+      if (!childId || !reportId) {
+        return;
+      }
+
+      try {
+        localStorage.setItem(getSavedReportStorageKey(childId), String(reportId));
+      } catch (error) {
+        console.warn('Failed to persist report selection', error);
+      }
+    }
+
+    function getPersistedSavedReportId(childId) {
+      if (!childId) {
+        return null;
+      }
+
+      try {
+        const raw = localStorage.getItem(getSavedReportStorageKey(childId));
+        const numericId = Number(raw);
+        return Number.isFinite(numericId) && numericId > 0 ? numericId : null;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function clearPersistedSavedReportId(childId) {
+      if (!childId) {
+        return;
+      }
+
+      try {
+        localStorage.removeItem(getSavedReportStorageKey(childId));
+      } catch (error) {
+        console.warn('Failed to clear report selection', error);
+      }
+    }
+
+    function getAnalysisSourceMeta(analysis) {
+      const source = analysis && analysis.source ? analysis.source : 'unknown';
+      const detail = analysis && analysis.source_detail ? analysis.source_detail : '';
+
+      switch (source) {
+        case 'usage_habit':
+          return {
+            className: 'usage',
+            title: 'Usage Habit Report',
+            detail: detail || 'This updates automatically once a day from recorded login and chat activity.'
+          };
+        case 'llm_transcript':
+          return {
+            className: 'ai',
+            title: 'AI Report',
+            detail: detail || 'This saved report was generated by AI from the retained transcript bundle and activity summary.'
+          };
+        case 'llm_trend':
+          return {
+            className: 'ai',
+            title: 'AI Cumulative Analysis',
+            detail: detail || 'This cumulative view was generated by AI from the selected saved reports.'
+          };
+        case 'rule_based':
+          return {
+            className: 'fallback',
+            title: 'Fallback Analysis',
+            detail: detail || 'AI did not return a usable result, so the system used local rules instead.'
+          };
+        case 'preview':
+          return {
+            className: 'preview',
+            title: 'Threshold Preview',
+            detail: detail || 'This is only a generation preview and has not been saved as an AI report.'
+          };
+        case 'no_data':
+          return {
+            className: 'no-data',
+            title: 'No Chat Sample',
+            detail: detail || 'There was not enough recent child-authored chat to analyze.'
+          };
+        default:
+          return {
+            className: 'preview',
+            title: 'Report Status',
+            detail: detail || 'Report source is not available.'
+          };
+      }
+    }
+
+    function renderReportSourceMeta(analysis) {
+      const container = document.getElementById('reportSourceMeta');
+      if (!container) {
+        return;
+      }
+
+      if (!analysis) {
+        container.innerHTML = '';
+        return;
+      }
+
+      const meta = getAnalysisSourceMeta(analysis);
+      container.innerHTML = `
+        <div class="report-source-banner ${escapeHtml(meta.className)}">
+          <strong>${escapeHtml(meta.title)}</strong>
+          ${escapeHtml(meta.detail)}
+        </div>
+      `;
+    }
+
+    function buildReportGeneratedHint(analysis, fallbackText) {
+      const meta = getAnalysisSourceMeta(analysis || {});
+      return meta.detail || fallbackText;
+    }
+
+    function formatOneDecimal(value) {
+      const numeric = Number(value || 0);
+      return new Intl.NumberFormat(undefined, {
+        minimumFractionDigits: numeric % 1 === 0 ? 0 : 1,
+        maximumFractionDigits: 1
+      }).format(numeric);
+    }
+
+    function setActiveReportSwitchValue(value) {
+      document.querySelectorAll('[data-report-switch-slot]').forEach(item => {
+        item.classList.toggle('active', item.dataset.switchValue === value);
       });
+    }
+
+    function setReportSwitchMode(mode) {
+      const switchRoot = document.querySelector('.report-metric-switch');
+      const buttons = Array.from(document.querySelectorAll('[data-report-switch-slot]'));
+      if (!switchRoot || buttons.length !== 3) {
+        return;
+      }
+
+      if (mode === 'hidden') {
+        switchRoot.style.display = 'none';
+        return;
+      }
+
+      switchRoot.style.display = 'inline-flex';
+      const configs = mode === 'usage'
+        ? [
+            { label: '15 Days', value: 'day' },
+            { label: '4 Weeks', value: 'week' },
+            { label: '3 Months', value: 'month' },
+          ]
+        : [
+            { label: 'Messages', value: 'child_message_count' },
+            { label: 'Logins', value: 'login_count' },
+            { label: 'Minutes', value: 'used_minutes' },
+          ];
+
+      buttons.forEach((button, index) => {
+        const config = configs[index];
+        button.textContent = config.label;
+        button.dataset.switchMode = mode;
+        button.dataset.switchValue = config.value;
+      });
+
+      setActiveReportSwitchValue(mode === 'usage' ? reportState.usagePeriod : reportState.metric);
+    }
+
+    function toggleAutoReportSettings(forceState) {
+      const popover = document.getElementById('autoReportSettingsPopover');
+      if (!popover) {
+        return;
+      }
+
+      const shouldOpen = typeof forceState === 'boolean'
+        ? forceState
+        : popover.style.display === 'none';
+      popover.style.display = shouldOpen ? 'block' : 'none';
     }
 
     function beginReportRequest(childId) {
@@ -1622,12 +2103,16 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       const selectedCount = reportState.selectedReportIds.length;
       const totalCount = reportState.history.length;
       document.getElementById('reportSelectionMeta').textContent = totalCount === 0
-        ? 'No saved reports yet.'
+        ? ''
         : `${selectedCount} of ${totalCount} saved report(s) selected.`;
     }
 
     function toggleTrendSelectionMode(forceState) {
       const nextState = typeof forceState === 'boolean' ? forceState : !reportState.selectionMode;
+      if (nextState && (!Array.isArray(reportState.history) || reportState.history.length === 0)) {
+        return;
+      }
+
       reportState.selectionMode = nextState;
       document.getElementById('reportSelectionToolbar').style.display = nextState ? 'flex' : 'none';
       document.getElementById('toggleTrendSelectionBtn').textContent = nextState ? 'Selection On' : 'Cumulative Analysis';
@@ -1745,6 +2230,8 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
 
       beginReportRequest(childId);
       reportState.metric = 'child_message_count';
+      reportState.usagePeriod = 'day';
+      reportState.usageReport = null;
       reportState.activeSnapshot = null;
       reportState.activeRecord = null;
       reportState.activeSource = 'empty';
@@ -1756,26 +2243,30 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       reportState.selectionMode = false;
       reportState.selectedReportIds = [];
       reportState.trendAnalysis = null;
-      setActiveReportMetricButton(reportState.metric);
+      setReportSwitchMode('usage');
       document.getElementById('childReportTitle').textContent = `${child.name}'s Report`;
       document.getElementById('childReportModal').style.display = 'block';
       document.getElementById('childReportContent').style.display = 'none';
       document.getElementById('childReportLoading').style.display = 'block';
-      document.getElementById('reportGeneratedHint').textContent = 'Loading saved reports and report settings.';
+      document.getElementById('reportGeneratedHint').textContent = 'Loading usage habit and chat reports.';
       document.getElementById('autoReportEnabled').checked = false;
       document.getElementById('autoReportFrequency').value = '7';
-      document.getElementById('autoReportWindow').value = '14';
       document.getElementById('autoReportMeta').textContent = 'Loading report schedule...';
+      document.getElementById('childReportActivityTitle').textContent = 'System Usage';
       document.getElementById('toggleTrendSelectionBtn').textContent = 'Cumulative Analysis';
       document.getElementById('reportSelectionToolbar').style.display = 'none';
-      document.getElementById('reportSelectionMeta').textContent = 'All saved reports selected.';
-      document.getElementById('selectedReportMeta').textContent = 'No report selected';
+      document.getElementById('reportSelectionMeta').textContent = '';
+      document.getElementById('selectedReportMeta').textContent = '';
       document.getElementById('childReportSummary').innerHTML = '';
       document.getElementById('childReportInsights').innerHTML = '';
       document.getElementById('childReportChart').innerHTML = '';
       document.getElementById('childReportSampleStatus').innerHTML = '';
+      document.getElementById('reportSourceMeta').innerHTML = '';
       document.getElementById('childReportAnalysis').innerHTML = '';
+      document.getElementById('reportHistoryMeta').textContent = '';
+      document.getElementById('usageHabitList').innerHTML = '';
       document.getElementById('childReportHistoryList').innerHTML = '';
+      toggleAutoReportSettings(false);
       loadChildReportHistory();
     }
 
@@ -1783,6 +2274,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       reportState.requestKey += 1;
       reportState.selectionToken += 1;
       reportState.childId = null;
+      toggleAutoReportSettings(false);
       document.getElementById('childReportModal').style.display = 'none';
     }
 
@@ -2040,7 +2532,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
         {
           label: 'Messages',
           value: summary.total_child_messages,
-          note: `${summary.total_assistant_messages || 0} assistant replies`
+          note: `${summary.total_assistant_messages || 0} assistant replies, low weight`
         },
         {
           label: 'Conversations',
@@ -2120,9 +2612,20 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
     }
 
     function renderContentReadiness(readiness) {
+      let label = 'No recent child messages';
+      if (readiness) {
+        if (readiness.can_generate) {
+          label = 'Ready for AI report';
+        } else if (readiness.recommended_sample_met) {
+          label = 'Need more new chat';
+        } else if (readiness.message_count > 0) {
+          label = 'Limited sample';
+        }
+      }
+
       document.getElementById('childReportSampleStatus').innerHTML = readiness ? `
-        <strong>${escapeHtml(readiness.message_count === 0 ? 'No recent child messages' : (readiness.recommended_sample_met ? 'Stronger sample' : 'Limited sample'))}</strong><br>
-        ${formatNumber(readiness.message_count)} child messages · ${formatNumber(readiness.character_count)} characters · ${formatNumber(readiness.active_days)} active day(s)
+        <strong>${escapeHtml(label)}</strong><br>
+        ${formatNumber(readiness.message_count)} child messages · ${formatNumber(readiness.increment_message_count || 0)} new since last saved report · ${formatNumber(readiness.active_days)} active day(s)
       ` : '';
     }
 
@@ -2172,26 +2675,34 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
     }
 
     function buildSelectedReportMeta() {
+      if (reportState.activeSource === 'usage' && reportState.usageReport) {
+        return `Usage habit report · Updated ${formatReportDate(reportState.usageReport.updated_at)}`;
+      }
+
       if (reportState.activeSource === 'saved' && reportState.activeRecord) {
-        const generatedAt = reportState.activeRecord.created_at
-          ? formatReportDate(reportState.activeRecord.created_at)
+        const savedAt = reportState.activeRecord.created_at || reportState.activeRecord.updated_at;
+        const generatedAt = savedAt
+          ? formatReportDate(savedAt)
           : 'Unknown time';
-        const updatedHint = reportState.activeRecord.generation_mode === 'manual'
-          && reportState.activeRecord.updated_at
-          && reportState.activeRecord.updated_at !== reportState.activeRecord.created_at
-          ? ' · updated'
-          : '';
-        return `${reportState.activeRecord.generation_mode === 'auto' ? 'Auto' : 'Manual'} report · ${generatedAt}${updatedHint}`;
+        return `${reportState.activeRecord.generation_mode === 'auto' ? 'Auto' : 'Manual'} saved report · ${generatedAt}`;
       }
 
       if (reportState.activeSource === 'trend' && reportState.trendAnalysis) {
         return `${reportState.trendAnalysis.selected_report_count || 0} report(s) selected`;
       }
 
-      return 'No report selected';
+      if (reportState.activeSource === 'preview' && reportState.activeSnapshot) {
+        return 'Threshold preview';
+      }
+
+      return '';
     }
 
     function updateActiveHistorySelection() {
+      document.querySelectorAll('[data-usage-report]').forEach(item => {
+        item.classList.toggle('active', reportState.activeSource === 'usage');
+      });
+
       document.querySelectorAll('[data-report-history-id]').forEach(item => {
         const reportId = Number(item.dataset.reportHistoryId);
         item.classList.toggle(
@@ -2207,28 +2718,71 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       });
     }
 
+    function renderUsageReportList() {
+      const container = document.getElementById('usageHabitList');
+      if (!container) {
+        return;
+      }
+
+      if (!reportState.usageReport) {
+        container.innerHTML = '';
+        return;
+      }
+
+      const dailySummary = reportState.usageReport.ranges && reportState.usageReport.ranges.day
+        ? reportState.usageReport.ranges.day.summary
+        : null;
+
+      container.innerHTML = `
+        <button type="button" class="report-usage-item" data-usage-report="1" onclick="openUsageHabitReport()">
+          <span class="report-usage-kicker">
+            <i class="fas fa-chart-line"></i>
+            Updated Daily
+          </span>
+          <span class="report-usage-title">System Usage Habit</span>
+          <div class="report-usage-meta">
+            ${escapeHtml(formatNumber(dailySummary && dailySummary.login_count || 0))} logins in the last 15 days ·
+            ${escapeHtml(formatOneDecimal(dailySummary && dailySummary.avg_estimated_minutes_per_login || 0))} min/login
+          </div>
+          <div class="report-usage-meta">
+            ${escapeHtml(formatOneDecimal(dailySummary && dailySummary.avg_child_messages_per_login || 0))} child messages per login ·
+            Latest login ${escapeHtml(reportState.usageReport.child && reportState.usageReport.child.last_login_at ? formatReportDate(reportState.usageReport.child.last_login_at) : 'Never')}
+          </div>
+        </button>
+      `;
+
+      updateActiveHistorySelection();
+    }
+
     function renderHistoryList() {
       const container = document.getElementById('childReportHistoryList');
+      const historyMeta = document.getElementById('reportHistoryMeta');
+      const trendButton = document.getElementById('toggleTrendSelectionBtn');
 
       if (!Array.isArray(reportState.history) || reportState.history.length === 0) {
-        container.innerHTML = '<div class="report-helper-text">No saved reports yet.</div>';
+        reportState.selectionMode = false;
+        document.getElementById('reportSelectionToolbar').style.display = 'none';
+        trendButton.textContent = 'Cumulative Analysis';
+        historyMeta.textContent = '';
+        container.innerHTML = '';
+        trendButton.disabled = true;
         updateActiveHistorySelection();
         return;
       }
 
+      trendButton.disabled = false;
+      historyMeta.textContent = `${reportState.history.length} saved snapshot(s)`;
       container.innerHTML = reportState.history.map(item => {
-        const updatedLabel = item.generation_mode === 'manual'
-          && item.updated_at
-          && item.updated_at !== item.created_at
-          ? `Updated ${formatReportDate(item.updated_at)}`
-          : formatReportDate(item.created_at) || 'Unknown time';
+        const savedAtLabel = formatReportDate(item.created_at || item.updated_at) || 'Unknown time';
         const scopeLabel = item.scope_started_at && item.scope_ended_at
           ? `${formatDate(item.scope_started_at)} - ${formatDate(item.scope_ended_at)}`
           : `${item.window_days} day span`;
+        const activityLabel = `${formatNumber(item.sample_message_count || 0)} child msgs · ${formatNumber(item.message_record_count || 0)} retained`;
         const inSelection = reportState.selectionMode;
         const clickHandler = inSelection
           ? `toggleTrendReportSelection(${item.id})`
           : `openSavedReport(${item.id})`;
+        const typeClass = item.generation_mode === 'auto' ? 'auto' : 'manual';
 
         return `
           <button
@@ -2240,15 +2794,21 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
             <div class="report-history-row">
               ${inSelection ? `<span class="report-history-check"><i class="fas fa-check"></i></span>` : ''}
               <div class="report-history-body">
+                <div class="report-history-topline">
+                  <div class="report-history-badges">
+                    <span class="report-history-pill ${typeClass}">${escapeHtml(item.generation_mode === 'auto' ? 'Auto' : 'Manual')}</span>
+                    <span class="report-history-pill">${escapeHtml(item.risk_level || 'low')} risk</span>
+                    <span class="report-history-pill">${escapeHtml(item.confidence || 'none')} confidence</span>
+                  </div>
+                  <span class="report-history-time">${escapeHtml(savedAtLabel)}</span>
+                </div>
                 <span class="report-history-title">${escapeHtml(item.headline || `${item.generation_mode === 'auto' ? 'Auto' : 'Manual'} report`)}</span>
-                <span class="report-history-meta">
-                  ${escapeHtml(item.generation_mode === 'auto' ? 'Auto' : 'Manual')} ·
-                  ${escapeHtml(item.status === 'ready' ? 'ready' : 'limited data')} ·
-                  ${escapeHtml(item.risk_level || 'low')} risk ·
-                  ${escapeHtml(item.confidence || 'none')} confidence
-                </span>
-                <span class="report-history-meta">${escapeHtml(scopeLabel)}</span>
-                <span class="report-history-meta">${escapeHtml(updatedLabel)}</span>
+                <span class="report-history-scope">${escapeHtml(scopeLabel)}</span>
+                <div class="report-history-divider"></div>
+                <div class="report-history-footline">
+                  <span class="report-history-meta">${escapeHtml(activityLabel)}</span>
+                  <span class="report-history-meta">${escapeHtml(item.report_day || '')}</span>
+                </div>
               </div>
             </div>
           </button>
@@ -2265,13 +2825,13 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       }
 
       document.getElementById('autoReportEnabled').checked = !!settings.auto_generate_enabled;
-      document.getElementById('autoReportFrequency').value = String(settings.auto_generate_frequency_days || 7);
-      document.getElementById('autoReportWindow').value = String(settings.auto_generate_window_days || 14);
+      const periodDays = String(settings.auto_generate_period_days || settings.auto_generate_frequency_days || 7);
+      document.getElementById('autoReportFrequency').value = periodDays;
 
       const nextDue = settings.next_report_due_at ? formatReportDate(settings.next_report_due_at) : 'Not scheduled';
       const lastGenerated = settings.last_report_generated_at ? formatReportDate(settings.last_report_generated_at) : 'Never';
       document.getElementById('autoReportMeta').textContent = settings.auto_generate_enabled
-        ? `Every ${settings.auto_generate_frequency_days} day(s) · ${settings.auto_generate_window_days} day window · Next ${nextDue} · Last ${lastGenerated}`
+        ? `Every ${periodDays} day(s) · Next ${nextDue} · Last ${lastGenerated}`
         : 'Auto generation is off.';
     }
 
@@ -2288,6 +2848,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       const protectiveFactors = Array.isArray(analysis.protective_factors) ? analysis.protective_factors : [];
 
       document.getElementById('selectedReportMeta').textContent = buildSelectedReportMeta();
+      renderReportSourceMeta(analysis);
       document.getElementById('childReportAnalysis').innerHTML = `
         <div class="report-analysis-grid">
           <article class="report-analysis-card full">
@@ -2373,6 +2934,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       const riskLevel = trajectory.level || 'low';
 
       document.getElementById('selectedReportMeta').textContent = buildSelectedReportMeta();
+      renderReportSourceMeta(analysis);
       document.getElementById('childReportSampleStatus').innerHTML = `
         <strong>${formatNumber(analysis.selected_report_count || 0)} report(s) selected</strong><br>
         ${formatNumber(engagement.child_message_count || 0)} child messages · ${formatNumber(engagement.active_days || 0)} active day(s)
@@ -2430,20 +2992,180 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       `;
     }
 
+    function renderUsageHabitSummary(range) {
+      const summary = range.summary || {};
+      document.getElementById('childReportSummary').innerHTML = [
+        {
+          label: 'Active Days',
+          value: summary.active_days || 0,
+          note: range.title
+        },
+        {
+          label: 'Logins',
+          value: summary.login_count || 0,
+          note: 'Recorded sign-ins'
+        },
+        {
+          label: 'Avg Min / Login*',
+          value: formatOneDecimal(summary.avg_estimated_minutes_per_login || 0),
+          note: 'Estimated from daily totals'
+        },
+        {
+          label: 'Median Min / Login*',
+          value: formatOneDecimal(summary.median_estimated_minutes_per_login || 0),
+          note: 'Estimated from daily totals'
+        },
+        {
+          label: 'Avg Child Msg / Login',
+          value: formatOneDecimal(summary.avg_child_messages_per_login || 0),
+          note: 'Child-authored messages only'
+        }
+      ].map(item => `
+        <article class="report-stat-card">
+          <span class="report-stat-label">${item.label}</span>
+          <span class="report-stat-value">${escapeHtml(item.value)}</span>
+          <span class="report-stat-note">${escapeHtml(item.note)}</span>
+        </article>
+      `).join('');
+    }
+
+    function renderUsageHabitInsights(report, range) {
+      const summary = range.summary || {};
+      const latestLogin = summary.latest_login_at
+        ? `Latest login in view: ${formatReportDate(summary.latest_login_at)}`
+        : 'Latest login in view: Never';
+      const earliestLogin = summary.earliest_login_at
+        ? `Earliest login in view: ${formatReportDate(summary.earliest_login_at)}`
+        : 'Earliest login in view: Not available';
+      const childLastLogin = report.child && report.child.last_login_at
+        ? `Most recent recorded login: ${formatReportDate(report.child.last_login_at)}`
+        : 'Most recent recorded login: Never';
+
+      document.getElementById('childReportInsights').innerHTML = [
+        latestLogin,
+        earliestLogin,
+        childLastLogin,
+        '* Per-login duration is estimated from daily total minutes because historical single-session timing is not stored.'
+      ].map(item => `<div class="report-insight-pill">${escapeHtml(item)}</div>`).join('');
+    }
+
+    function renderUsageHabitChart(range) {
+      const buckets = Array.isArray(range.buckets) ? range.buckets : [];
+      document.getElementById('childReportChart').innerHTML = `
+        <div class="usage-bucket-grid">
+          ${buckets.map(bucket => `
+            <article class="usage-bucket-card">
+              <div class="usage-bucket-title">${escapeHtml(bucket.label || '')}</div>
+              <div class="usage-bucket-meta">${formatNumber(bucket.login_count || 0)} logins · ${formatNumber(bucket.used_minutes || 0)} min</div>
+              <div class="usage-bucket-meta">${formatOneDecimal(bucket.avg_estimated_minutes_per_login || 0)} avg min/login*</div>
+              <div class="usage-bucket-meta">${formatOneDecimal(bucket.avg_child_messages_per_login || 0)} child msgs/login</div>
+            </article>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function renderUsageHabitAnalysis(report, range) {
+      const summary = range.summary || {};
+      const ranges = report.ranges || {};
+      const rangeCards = ['day', 'week', 'month'].map(periodKey => {
+        const period = ranges[periodKey];
+        const periodSummary = period && period.summary ? period.summary : {};
+        const labelMap = {
+          day: '15 Days',
+          week: '4 Weeks',
+          month: '3 Months'
+        };
+
+        return `
+          <article class="report-analysis-card">
+            <h4>${labelMap[periodKey]}</h4>
+            <p>${formatNumber(periodSummary.login_count || 0)} logins across ${formatNumber(periodSummary.active_days || 0)} active day(s).</p>
+            <div class="report-helper-text">${formatOneDecimal(periodSummary.avg_estimated_minutes_per_login || 0)} avg min/login* · ${formatOneDecimal(periodSummary.avg_child_messages_per_login || 0)} child msgs/login</div>
+          </article>
+        `;
+      }).join('');
+
+      const bucketRows = (Array.isArray(range.buckets) ? range.buckets : []).map(bucket => `
+        <div class="report-list-item">
+          <strong>${escapeHtml(bucket.label || '')}</strong><br>
+          ${formatNumber(bucket.login_count || 0)} logins · ${formatNumber(bucket.used_minutes || 0)} min ·
+          ${formatOneDecimal(bucket.avg_estimated_minutes_per_login || 0)} avg min/login* ·
+          ${formatOneDecimal(bucket.avg_child_messages_per_login || 0)} child msgs/login
+        </div>
+      `).join('');
+
+      document.getElementById('selectedReportMeta').textContent = buildSelectedReportMeta();
+      renderReportSourceMeta({
+        source: report.source,
+        source_detail: report.source_detail,
+      });
+      document.getElementById('childReportSampleStatus').innerHTML = `
+        <strong>${escapeHtml(range.title)}</strong><br>
+        ${formatNumber(summary.login_count || 0)} logins · ${formatNumber(summary.used_minutes || 0)} total minutes · ${formatNumber(summary.child_message_count || 0)} child messages
+      `;
+      document.getElementById('childReportAnalysis').innerHTML = `
+        <div class="report-analysis-grid">
+          <article class="report-analysis-card full">
+            <h4>Usage Habit Summary</h4>
+            <p>
+              ${formatNumber(summary.login_count || 0)} sign-in(s) were recorded across ${formatNumber(summary.active_days || 0)} active day(s).
+              Estimated per-login duration averages ${formatOneDecimal(summary.avg_estimated_minutes_per_login || 0)} minutes, with a median of ${formatOneDecimal(summary.median_estimated_minutes_per_login || 0)} and a highest daily estimate of ${formatOneDecimal(summary.max_estimated_minutes_per_login || 0)}.
+              The child sends about ${formatOneDecimal(summary.avg_child_messages_per_login || 0)} child-authored message(s) per login.
+            </p>
+          </article>
+
+          ${rangeCards}
+
+          <article class="report-analysis-card full">
+            <h4>${escapeHtml(range.title)} Breakdown</h4>
+            ${bucketRows || '<div class="report-list-item">No usage record was captured in this window.</div>'}
+          </article>
+        </div>
+      `;
+    }
+
+    function renderUsageHabitReport() {
+      if (!reportState.usageReport) {
+        renderReportEmptyState();
+        return;
+      }
+
+      const ranges = reportState.usageReport.ranges || {};
+      const range = ranges[reportState.usagePeriod] || ranges.day;
+      if (!range) {
+        renderReportEmptyState();
+        return;
+      }
+
+      document.getElementById('childReportLoading').style.display = 'none';
+      document.getElementById('childReportContent').style.display = 'grid';
+      document.getElementById('childReportActivityTitle').textContent = 'System Usage';
+      setReportSwitchMode('usage');
+      renderUsageHabitSummary(range);
+      renderUsageHabitInsights(reportState.usageReport, range);
+      renderUsageHabitChart(range);
+      renderUsageHabitAnalysis(reportState.usageReport, range);
+      updateActiveHistorySelection();
+    }
+
     function renderReportEmptyState() {
       document.getElementById('childReportLoading').style.display = 'none';
       document.getElementById('childReportContent').style.display = 'grid';
       document.getElementById('childReportSummary').innerHTML = '';
-      document.getElementById('childReportInsights').innerHTML = '<div class="report-empty-state">No saved report yet.</div>';
-      document.getElementById('childReportChart').innerHTML = '<div class="report-empty-state">Generate a report to save today&apos;s snapshot and retain its internal message scope for later cumulative analysis.</div>';
+      document.getElementById('childReportInsights').innerHTML = '';
+      document.getElementById('childReportChart').innerHTML = '';
       document.getElementById('childReportSampleStatus').innerHTML = '';
-      document.getElementById('childReportAnalysis').innerHTML = '<div class="report-empty-state">Saved reports will appear on the left. Re-generating on the same day updates today&apos;s manual report instead of creating a duplicate.</div>';
-      document.getElementById('selectedReportMeta').textContent = 'No report selected';
+      document.getElementById('reportSourceMeta').innerHTML = '';
+      document.getElementById('childReportAnalysis').innerHTML = '';
+      document.getElementById('selectedReportMeta').textContent = '';
       updateActiveHistorySelection();
     }
 
     function renderTrendOverview(analysis) {
       const engagement = analysis.engagement || {};
+      document.getElementById('childReportActivityTitle').textContent = 'Trend Coverage';
+      setReportSwitchMode('hidden');
       document.getElementById('childReportSummary').innerHTML = [
         {
           label: 'Reports',
@@ -2491,6 +3213,11 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
     }
 
     function renderActiveSnapshot() {
+      if (reportState.activeSource === 'usage' && reportState.usageReport) {
+        renderUsageHabitReport();
+        return;
+      }
+
       if (reportState.activeSource === 'trend' && reportState.trendAnalysis) {
         document.getElementById('childReportLoading').style.display = 'none';
         document.getElementById('childReportContent').style.display = 'grid';
@@ -2507,6 +3234,8 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
 
       document.getElementById('childReportLoading').style.display = 'none';
       document.getElementById('childReportContent').style.display = 'grid';
+      document.getElementById('childReportActivityTitle').textContent = 'Recent Activity';
+      setReportSwitchMode('content');
       renderReportSummary(reportState.activeSnapshot);
       renderReportInsights(reportState.activeSnapshot);
       renderReportChart();
@@ -2525,11 +3254,24 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       }
 
       reportState.initializedSelection = true;
-      if (Array.isArray(reportState.history) && reportState.history.length > 0) {
-        openSavedReport(reportState.history[0].id);
-      } else {
-        renderReportEmptyState();
+      openUsageHabitReport(reportState.usagePeriod || 'day');
+    }
+
+    function openUsageHabitReport(periodKey) {
+      if (periodKey) {
+        reportState.usagePeriod = periodKey;
       }
+
+      reportState.selectionMode = false;
+      document.getElementById('reportSelectionToolbar').style.display = 'none';
+      document.getElementById('toggleTrendSelectionBtn').textContent = 'Cumulative Analysis';
+      reportState.activeSource = 'usage';
+      reportState.activeSnapshot = null;
+      reportState.activeRecord = null;
+      reportState.trendAnalysis = null;
+      document.getElementById('reportGeneratedHint').textContent = buildReportGeneratedHint(reportState.usageReport, 'Usage habit report updates automatically once per day.');
+      renderHistoryList();
+      renderActiveSnapshot();
     }
 
     async function loadChildReportHistory(requestKey = reportState.requestKey) {
@@ -2555,10 +3297,15 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
         }
 
         reportState.settings = result.settings;
+        reportState.usageReport = result.usage_report || null;
+        if (reportState.usageReport && reportState.usageReport.default_period) {
+          reportState.usagePeriod = reportState.usageReport.default_period;
+        }
         reportState.history = Array.isArray(result.reports) ? result.reports : [];
         reportState.historyLoaded = true;
         reportState.selectedReportIds = reportState.history.map(item => Number(item.id));
         renderReportSettings();
+        renderUsageReportList();
         updateTrendSelectionMeta();
         renderHistoryList();
         maybeInitializeReportSelection();
@@ -2606,7 +3353,8 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
         reportState.trendAnalysis = null;
         reportState.activeSnapshot = result.report;
         reportState.activeRecord = result.report_record;
-        document.getElementById('reportGeneratedHint').textContent = 'Saved report opened.';
+        persistSavedReportSelection(childId, result.report_record && result.report_record.id);
+        document.getElementById('reportGeneratedHint').textContent = buildReportGeneratedHint(result.report && result.report.analysis, 'Saved report opened.');
         renderActiveSnapshot();
       } catch (error) {
         if (!isActiveReportSelection(requestKey, childId, selectionToken)) {
@@ -2633,8 +3381,8 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       formData.append('csrf_token', CSRF_TOKEN);
       formData.append('child_id', childId);
       formData.append('auto_generate_enabled', document.getElementById('autoReportEnabled').checked ? '1' : '0');
+      formData.append('auto_generate_period_days', document.getElementById('autoReportFrequency').value);
       formData.append('auto_generate_frequency_days', document.getElementById('autoReportFrequency').value);
-      formData.append('auto_generate_window_days', document.getElementById('autoReportWindow').value);
 
       try {
         const response = await fetch(CHILD_REPORT_SETTINGS_API_URL, {
@@ -2654,6 +3402,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
         reportState.settings = result.settings;
         renderReportSettings();
         await loadChildReportHistory();
+        toggleAutoReportSettings(false);
         showPageAlert(result.message || 'Report settings saved.', 'success');
       } catch (error) {
         if (!isActiveReportRequest(requestKey, childId)) {
@@ -2698,6 +3447,22 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
           return;
         }
 
+        if (response.status === 422 && result.report) {
+          reportState.history = Array.isArray(result.reports) ? result.reports : reportState.history;
+          reportState.settings = result.settings || reportState.settings;
+          renderReportSettings();
+          updateTrendSelectionMeta();
+          renderHistoryList();
+          if (reportState.activeSource === 'preview' || reportState.activeSource === 'empty') {
+            openUsageHabitReport(reportState.usagePeriod || 'day');
+          } else {
+            renderActiveSnapshot();
+          }
+          document.getElementById('reportGeneratedHint').textContent = result.message || 'More new child chat is needed before the next saved report.';
+          showPageAlert(result.message || 'More new child chat is needed before the next saved report.', 'info');
+          return;
+        }
+
         if (!response.ok || !result.success) {
           throw new Error(result.error || result.message || 'Failed to generate report');
         }
@@ -2709,13 +3474,12 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
         reportState.trendAnalysis = null;
         reportState.activeSnapshot = result.report;
         reportState.activeRecord = result.report_record;
+        persistSavedReportSelection(childId, result.report_record && result.report_record.id);
         renderReportSettings();
         updateTrendSelectionMeta();
         renderHistoryList();
         renderActiveSnapshot();
-        document.getElementById('reportGeneratedHint').textContent = result.updated_existing
-          ? "Today's manual report updated."
-          : 'A new manual report was saved.';
+        document.getElementById('reportGeneratedHint').textContent = buildReportGeneratedHint(result.report && result.report.analysis, 'A new manual report was saved.');
         showPageAlert(result.message || 'Report generated successfully.', 'success');
       } catch (error) {
         if (!isActiveReportSelection(requestKey, childId, selectionToken)) {
@@ -2771,11 +3535,15 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
           throw new Error(result.error || result.message || 'Failed to analyze selected reports');
         }
 
+        reportState.selectionMode = false;
+        document.getElementById('reportSelectionToolbar').style.display = 'none';
+        document.getElementById('toggleTrendSelectionBtn').textContent = 'Cumulative Analysis';
         reportState.activeSource = 'trend';
         reportState.activeSnapshot = null;
         reportState.activeRecord = null;
         reportState.trendAnalysis = result.analysis || null;
-        document.getElementById('reportGeneratedHint').textContent = 'Cumulative analysis loaded.';
+        document.getElementById('reportGeneratedHint').textContent = buildReportGeneratedHint(result.analysis, 'Cumulative analysis loaded.');
+        renderHistoryList();
         renderActiveSnapshot();
       } catch (error) {
         if (!isActiveReportSelection(requestKey, childId, selectionToken)) {
@@ -3095,19 +3863,51 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       }
     });
 
-    document.querySelectorAll('[data-report-metric]').forEach(button => {
+    document.querySelectorAll('[data-report-switch-slot]').forEach(button => {
       button.addEventListener('click', () => {
-        const nextMetric = button.dataset.reportMetric;
-        if (!nextMetric || reportState.metric === nextMetric) {
+        const switchMode = button.dataset.switchMode || 'content';
+        const nextValue = button.dataset.switchValue;
+        if (!nextValue) {
           return;
         }
 
-        reportState.metric = nextMetric;
-        document.querySelectorAll('[data-report-metric]').forEach(item => item.classList.toggle('active', item === button));
-        if (reportState.activeSource === 'saved') {
+        if (switchMode === 'usage') {
+          if (reportState.usagePeriod === nextValue) {
+            return;
+          }
+
+          reportState.usagePeriod = nextValue;
+          setActiveReportSwitchValue(nextValue);
+          if (reportState.activeSource === 'usage') {
+            renderUsageHabitReport();
+          }
+          return;
+        }
+
+        if (reportState.metric === nextValue) {
+          return;
+        }
+
+        reportState.metric = nextValue;
+        setActiveReportSwitchValue(nextValue);
+        if (reportState.activeSource === 'saved' || reportState.activeSource === 'preview') {
           renderReportChart();
         }
       });
+    });
+
+    document.addEventListener('click', (event) => {
+      const anchor = document.querySelector('.report-settings-anchor');
+      const modal = document.getElementById('childReportModal');
+      if (!anchor || !modal || modal.style.display !== 'block') {
+        return;
+      }
+
+      if (anchor.contains(event.target)) {
+        return;
+      }
+
+      toggleAutoReportSettings(false);
     });
 
     document.getElementById('saveReportSettingsBtn').addEventListener('click', () => {

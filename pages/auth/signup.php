@@ -13,7 +13,6 @@ $csrfToken = Helper::generateCsrfToken();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign Up</title>
     <link rel="stylesheet" href="<?php echo Helper::url('assets/css/auth_styles.css'); ?>">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 
 <body>
@@ -39,14 +38,14 @@ $csrfToken = Helper::generateCsrfToken();
                 <!-- Password Input -->
                 <div class="input-group">
                     <input type="password" name="password" id="signup-password" placeholder="Password" required>
-                    <i class="fa fa-eye toggle-password"></i>
+                    <button type="button" class="password-toggle" aria-label="Show password">Show</button>
                     <small class="field-feedback <?= Helper::firstError('password') !== '' ? 'error' : '' ?>" id="signup-password-feedback"><?= htmlspecialchars(Helper::firstError('password')) ?></small>
                 </div>
 
                 <!-- Confirm Password Input -->
                 <div class="input-group">
                     <input type="password" name="confirm_password" id="signup-confirm-password" placeholder="Confirm password" required>
-                    <i class="fa fa-eye toggle-password"></i>
+                    <button type="button" class="password-toggle" aria-label="Show password">Show</button>
                     <small class="field-feedback <?= Helper::firstError('confirm_password') !== '' ? 'error' : '' ?>" id="signup-confirm-password-feedback"><?= htmlspecialchars(Helper::firstError('confirm_password')) ?></small>
                 </div>
 

@@ -9,7 +9,7 @@ This report flow is designed as a parent-facing support tool, not a diagnostic s
 - Separates `risk dimensions`, `thinking patterns`, `protective factors`, and `parent guidance`.
 - Stores generated reports as snapshots so parents can review report history over time.
 - Keeps each saved report tied to its own internally retained chat scope so later cumulative analysis can look across saved reports without exposing raw chat in the parent UI.
-- Lets parents regenerate the manual report multiple times in one day while updating the same same-day manual report record instead of creating duplicates.
+- Saves a new manual snapshot each time parents click generate and the current incremental threshold is met.
 - Supports cumulative analysis across multiple saved reports for trend review.
 - Supports auto-generation settings per child account and a background runner via `php generate_scheduled_reports.php`.
 
