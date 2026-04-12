@@ -1421,6 +1421,43 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       line-height: 1.7;
     }
 
+    .report-toast {
+      position: fixed;
+      left: 50%;
+      bottom: 28px;
+      transform: translate(-50%, 18px);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 1200;
+      max-width: min(92vw, 680px);
+      padding: 12px 16px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.92);
+      color: #fff;
+      font-size: 13px;
+      line-height: 1.45;
+      text-align: center;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.22);
+      transition: opacity 0.22s ease, transform 0.22s ease;
+    }
+
+    .report-toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    .report-toast.info {
+      background: rgba(30, 41, 59, 0.94);
+    }
+
+    .report-toast.success {
+      background: rgba(22, 101, 52, 0.94);
+    }
+
+    .report-toast.error {
+      background: rgba(153, 27, 27, 0.94);
+    }
+
     @media (max-width: 768px) {
       .navbar {
         padding: 14px 16px;
@@ -1466,6 +1503,12 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       .child-summary,
       .child-inline-stats {
         width: 100%;
+      }
+
+      .report-toast {
+        bottom: 18px;
+        border-radius: 18px;
+        padding: 11px 14px;
       }
 
       .ghost-btn,
@@ -1864,6 +1907,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       </div>
     </div>
   </div>
+  <div id="childReportToast" class="report-toast info" aria-live="polite"></div>
 
   <script>
     const CHILDREN_API_URL = '<?= Helper::url('api/parent/children') ?>';
@@ -1882,6 +1926,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
     const APP_TIMEZONE = '<?= htmlspecialchars($appTimezone, ENT_QUOTES) ?>';
     let alertTimeout = null;
     let pageAlertTimeout = null;
+    let reportToastTimeout = null;
     let childrenState = [];
     let childNameCheckTimer = null;
     let childNameCheckController = null;
@@ -2157,6 +2202,8 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
     function toggleTrendSelectionMode(forceState) {
       const nextState = typeof forceState === 'boolean' ? forceState : !reportState.selectionMode;
       if (nextState && (!Array.isArray(reportState.history) || reportState.history.length === 0)) {
+        document.getElementById('reportGeneratedHint').textContent = 'No saved report yet. Generate one first, then run cumulative analysis.';
+        showReportToast('No saved report yet. Generate one first, then run cumulative analysis.', 'info');
         return;
       }
 
@@ -2313,6 +2360,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       document.getElementById('reportHistoryMeta').textContent = '';
       document.getElementById('usageHabitList').innerHTML = '';
       document.getElementById('childReportHistoryList').innerHTML = '';
+      hideReportToast();
       toggleAutoReportSettings(false);
       loadChildReportHistory();
     }
@@ -2321,6 +2369,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       reportState.requestKey += 1;
       reportState.selectionToken += 1;
       reportState.childId = null;
+      hideReportToast();
       toggleAutoReportSettings(false);
       document.getElementById('childReportModal').style.display = 'none';
     }
@@ -2455,6 +2504,94 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       pageAlertTimeout = setTimeout(() => {
         alertDiv.style.display = 'none';
       }, 5000);
+    }
+
+    function hideReportToast() {
+      const toast = document.getElementById('childReportToast');
+      if (!toast) {
+        return;
+      }
+
+      toast.classList.remove('show');
+      if (reportToastTimeout) {
+        clearTimeout(reportToastTimeout);
+        reportToastTimeout = null;
+      }
+    }
+
+    function showReportToast(message, type = 'info') {
+      const toast = document.getElementById('childReportToast');
+      if (!toast || !message) {
+        return;
+      }
+
+      if (reportToastTimeout) {
+        clearTimeout(reportToastTimeout);
+      }
+
+      toast.textContent = message;
+      toast.className = `report-toast ${type}`;
+
+      requestAnimationFrame(() => {
+        toast.classList.add('show');
+      });
+
+      reportToastTimeout = setTimeout(() => {
+        toast.classList.remove('show');
+        reportToastTimeout = null;
+      }, 2600);
+    }
+
+    function buildReadinessToastMessage(readiness, fallbackText) {
+      const fallback = fallbackText || 'More child chat is needed before the next saved report.';
+      if (!readiness) {
+        return fallback;
+      }
+
+      const sampleGaps = [];
+      const incrementGaps = [];
+      const messageCount = Number(readiness.message_count || 0);
+      const minimumMessages = Number(readiness.minimum_messages || 0);
+      const characterCount = Number(readiness.character_count || 0);
+      const minimumCharacters = Number(readiness.minimum_characters || 0);
+      const activeDays = Number(readiness.active_days || 0);
+      const minimumActiveDays = Number(readiness.minimum_active_days || 0);
+      const incrementMessageCount = Number(readiness.increment_message_count || 0);
+      const minimumIncrementMessages = Number(readiness.minimum_increment_messages || 0);
+      const incrementCharacterCount = Number(readiness.increment_character_count || 0);
+      const minimumIncrementCharacters = Number(readiness.minimum_increment_characters || 0);
+      const incrementActiveDays = Number(readiness.increment_active_days || 0);
+      const minimumIncrementActiveDays = Number(readiness.minimum_increment_active_days || 0);
+
+      if (messageCount < minimumMessages) {
+        sampleGaps.push(`${messageCount}/${minimumMessages} msgs`);
+      }
+      if (characterCount < minimumCharacters) {
+        sampleGaps.push(`${characterCount}/${minimumCharacters} chars`);
+      }
+      if (activeDays < minimumActiveDays) {
+        sampleGaps.push(`${activeDays}/${minimumActiveDays} active days`);
+      }
+
+      if (incrementMessageCount < minimumIncrementMessages) {
+        incrementGaps.push(`${incrementMessageCount}/${minimumIncrementMessages} new msgs`);
+      }
+      if (incrementCharacterCount < minimumIncrementCharacters) {
+        incrementGaps.push(`${incrementCharacterCount}/${minimumIncrementCharacters} new chars`);
+      }
+      if (incrementActiveDays < minimumIncrementActiveDays) {
+        incrementGaps.push(`${incrementActiveDays}/${minimumIncrementActiveDays} new active days`);
+      }
+
+      if (!readiness.recommended_sample_met && sampleGaps.length > 0) {
+        return `Not ready yet. Current sample: ${sampleGaps.join(' · ')}.`;
+      }
+
+      if (readiness.recommended_sample_met && !readiness.increment_ready && incrementGaps.length > 0) {
+        return `Not ready yet. New chat since last report: ${incrementGaps.join(' · ')}.`;
+      }
+
+      return fallback;
     }
 
     function clearProfileErrors() {
@@ -2810,9 +2947,9 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
         reportState.selectionMode = false;
         document.getElementById('reportSelectionToolbar').style.display = 'none';
         trendButton.textContent = 'Cumulative Analysis';
-        historyMeta.textContent = '';
-        container.innerHTML = '';
-        trendButton.disabled = true;
+        historyMeta.textContent = 'No saved chat reports yet.';
+        container.innerHTML = '<div class="report-empty-state">No saved chat reports yet. Generate one report first, then use cumulative analysis.</div>';
+        trendButton.disabled = false;
         updateActiveHistorySelection();
         return;
       }
@@ -3114,15 +3251,6 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
 
     function renderUsageHabitAnalysis(report, range) {
       const summary = range.summary || {};
-      const bucketRows = (Array.isArray(range.buckets) ? range.buckets : []).map(bucket => `
-        <div class="report-list-item">
-          <strong>${escapeHtml(bucket.label || '')}</strong><br>
-          ${formatNumber(bucket.login_count || 0)} logins · ${formatNumber(bucket.used_minutes || 0)} min ·
-          ${formatOneDecimal(bucket.avg_estimated_minutes_per_login || 0)} avg min/login* ·
-          ${formatOneDecimal(bucket.avg_child_messages_per_login || 0)} child msgs/login
-        </div>
-      `).join('');
-
       document.getElementById('selectedReportMeta').textContent = buildSelectedReportMeta();
       renderReportSourceMeta({
         source: report.source,
@@ -3141,11 +3269,6 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
               Estimated per-login duration averages ${formatOneDecimal(summary.avg_estimated_minutes_per_login || 0)} minutes, with a median of ${formatOneDecimal(summary.median_estimated_minutes_per_login || 0)} and a highest daily estimate of ${formatOneDecimal(summary.max_estimated_minutes_per_login || 0)}.
               The child sends about ${formatOneDecimal(summary.avg_child_messages_per_login || 0)} child-authored message(s) per login.
             </p>
-          </article>
-
-          <article class="report-analysis-card full">
-            <h4>Usage Breakdown</h4>
-            ${bucketRows || '<div class="report-list-item">No usage record was captured in this window.</div>'}
           </article>
         </div>
       `;
@@ -3494,8 +3617,12 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
           } else {
             renderActiveSnapshot();
           }
-          document.getElementById('reportGeneratedHint').textContent = result.message || 'More new child chat is needed before the next saved report.';
-          showPageAlert(result.message || 'More new child chat is needed before the next saved report.', 'info');
+          const shortfallMessage = buildReadinessToastMessage(
+            result.report && result.report.content_readiness,
+            result.message || 'More new child chat is needed before the next saved report.'
+          );
+          document.getElementById('reportGeneratedHint').textContent = shortfallMessage;
+          showReportToast(shortfallMessage, 'info');
           return;
         }
 
@@ -3541,7 +3668,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       }
 
       if (selectedIds.length === 0) {
-        showPageAlert('Select at least one saved report.', 'error');
+        showReportToast('Select at least one saved report for cumulative analysis.', 'info');
         return;
       }
 

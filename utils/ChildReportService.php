@@ -36,12 +36,12 @@ class ChildReportService
         'topic_trends',
         'parent_guidance',
     ];
-    private const CONTENT_MIN_MESSAGES = 12;
-    private const CONTENT_MIN_CHARACTERS = 150;
-    private const CONTENT_MIN_ACTIVE_DAYS = 2;
-    private const INCREMENT_MIN_MESSAGES = 6;
-    private const INCREMENT_MIN_CHARACTERS = 80;
-    private const INCREMENT_MIN_ACTIVE_DAYS = 1;
+    private const CONTENT_MIN_MESSAGES = 10;
+    private const CONTENT_MIN_CHARACTERS = 120;
+    private const CONTENT_MIN_ACTIVE_DAYS = 0;
+    private const INCREMENT_MIN_MESSAGES = 5;
+    private const INCREMENT_MIN_CHARACTERS = 60;
+    private const INCREMENT_MIN_ACTIVE_DAYS = 0;
     private const TRANSCRIPT_MAX_MESSAGES = 220;
     private const TRANSCRIPT_MAX_MESSAGE_CHARS = 420;
     private const TRANSCRIPT_MAX_TOTAL_CHARS = 22000;
@@ -1527,12 +1527,10 @@ class ChildReportService
         $increments = $this->computeMessageStats($incrementMessages ?? $messages);
 
         $recommendedSampleMet = $totals['message_count'] >= self::CONTENT_MIN_MESSAGES
-            && $totals['character_count'] >= self::CONTENT_MIN_CHARACTERS
-            && $totals['active_days'] >= self::CONTENT_MIN_ACTIVE_DAYS;
+            && $totals['character_count'] >= self::CONTENT_MIN_CHARACTERS;
 
         $incrementReady = $increments['message_count'] >= self::INCREMENT_MIN_MESSAGES
-            && $increments['character_count'] >= self::INCREMENT_MIN_CHARACTERS
-            && $increments['active_days'] >= self::INCREMENT_MIN_ACTIVE_DAYS;
+            && $increments['character_count'] >= self::INCREMENT_MIN_CHARACTERS;
 
         $confidence = 'none';
         if ($totals['message_count'] > 0 && $totals['character_count'] > 0) {
