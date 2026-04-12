@@ -719,7 +719,8 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       font-weight: 600;
     }
 
-    .report-settings-grid select {
+    .report-settings-grid select,
+    .report-settings-grid input {
       width: 100%;
       border: 1px solid #d7dbe8;
       border-radius: 12px;
@@ -1816,9 +1817,14 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
                       <span>Period</span>
                       <select id="autoReportFrequency">
                         <option value="7">7 days</option>
-                        <option value="14">14 days</option>
+                        <option value="15">15 days</option>
                         <option value="30">30 days</option>
+                        <option value="custom">Custom</option>
                       </select>
+                    </label>
+                    <label for="autoReportCustomDays" id="autoReportCustomDaysWrapper" style="display: none;">
+                      <span>Custom days</span>
+                      <input type="number" id="autoReportCustomDays" min="1" max="90" step="1" inputmode="numeric" placeholder="1-90">
                     </label>
                   </div>
                   <button type="button" class="btn btn-inline" id="saveReportSettingsBtn">Save Schedule</button>
@@ -1879,6 +1885,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
     let childrenState = [];
     let childNameCheckTimer = null;
     let childNameCheckController = null;
+    const PRESET_AUTO_REPORT_DAYS = ['7', '15', '30'];
     let reportState = {
       childId: null,
       metric: 'child_message_count',
@@ -2022,6 +2029,46 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
         minimumFractionDigits: numeric % 1 === 0 ? 0 : 1,
         maximumFractionDigits: 1
       }).format(numeric);
+    }
+
+    function syncAutoReportFrequencyControls(periodDays) {
+      const select = document.getElementById('autoReportFrequency');
+      const customWrapper = document.getElementById('autoReportCustomDaysWrapper');
+      const customInput = document.getElementById('autoReportCustomDays');
+      const normalizedPeriod = String(periodDays || '7');
+      const usePreset = PRESET_AUTO_REPORT_DAYS.includes(normalizedPeriod);
+
+      select.value = usePreset ? normalizedPeriod : 'custom';
+      customWrapper.style.display = usePreset ? 'none' : 'flex';
+      customInput.required = !usePreset;
+      customInput.value = normalizedPeriod;
+    }
+
+    function handleAutoReportFrequencyChange() {
+      const select = document.getElementById('autoReportFrequency');
+      const customInput = document.getElementById('autoReportCustomDays');
+      const useCustom = select.value === 'custom';
+
+      syncAutoReportFrequencyControls(useCustom ? (customInput.value || '15') : select.value);
+
+      if (useCustom) {
+        customInput.focus();
+        customInput.select();
+      }
+    }
+
+    function getAutoReportFrequencyDaysValue() {
+      const selectValue = document.getElementById('autoReportFrequency').value;
+      const rawValue = selectValue === 'custom'
+        ? document.getElementById('autoReportCustomDays').value
+        : selectValue;
+      const periodDays = Number.parseInt(rawValue, 10);
+
+      if (!Number.isInteger(periodDays) || periodDays < 1 || periodDays > 90) {
+        throw new Error('Custom period must be between 1 and 90 days.');
+      }
+
+      return String(periodDays);
     }
 
     function setActiveReportSwitchValue(value) {
@@ -2741,7 +2788,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
           </span>
           <span class="report-usage-title">System Usage Habit</span>
           <div class="report-usage-meta">
-            ${escapeHtml(formatNumber(dailySummary && dailySummary.login_count || 0))} logins in the last 15 days ·
+            ${escapeHtml(formatNumber(dailySummary && dailySummary.login_count || 0))} recent logins ·
             ${escapeHtml(formatOneDecimal(dailySummary && dailySummary.avg_estimated_minutes_per_login || 0))} min/login
           </div>
           <div class="report-usage-meta">
@@ -2826,7 +2873,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
 
       document.getElementById('autoReportEnabled').checked = !!settings.auto_generate_enabled;
       const periodDays = String(settings.auto_generate_period_days || settings.auto_generate_frequency_days || 7);
-      document.getElementById('autoReportFrequency').value = periodDays;
+      syncAutoReportFrequencyControls(periodDays);
 
       const nextDue = settings.next_report_due_at ? formatReportDate(settings.next_report_due_at) : 'Not scheduled';
       const lastGenerated = settings.last_report_generated_at ? formatReportDate(settings.last_report_generated_at) : 'Never';
@@ -2998,7 +3045,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
         {
           label: 'Active Days',
           value: summary.active_days || 0,
-          note: range.title
+          note: 'Recorded in current view'
         },
         {
           label: 'Logins',
@@ -3067,25 +3114,6 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
 
     function renderUsageHabitAnalysis(report, range) {
       const summary = range.summary || {};
-      const ranges = report.ranges || {};
-      const rangeCards = ['day', 'week', 'month'].map(periodKey => {
-        const period = ranges[periodKey];
-        const periodSummary = period && period.summary ? period.summary : {};
-        const labelMap = {
-          day: '15 Days',
-          week: '4 Weeks',
-          month: '3 Months'
-        };
-
-        return `
-          <article class="report-analysis-card">
-            <h4>${labelMap[periodKey]}</h4>
-            <p>${formatNumber(periodSummary.login_count || 0)} logins across ${formatNumber(periodSummary.active_days || 0)} active day(s).</p>
-            <div class="report-helper-text">${formatOneDecimal(periodSummary.avg_estimated_minutes_per_login || 0)} avg min/login* · ${formatOneDecimal(periodSummary.avg_child_messages_per_login || 0)} child msgs/login</div>
-          </article>
-        `;
-      }).join('');
-
       const bucketRows = (Array.isArray(range.buckets) ? range.buckets : []).map(bucket => `
         <div class="report-list-item">
           <strong>${escapeHtml(bucket.label || '')}</strong><br>
@@ -3101,7 +3129,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
         source_detail: report.source_detail,
       });
       document.getElementById('childReportSampleStatus').innerHTML = `
-        <strong>${escapeHtml(range.title)}</strong><br>
+        <strong>${formatNumber(summary.active_days || 0)} active day(s)</strong><br>
         ${formatNumber(summary.login_count || 0)} logins · ${formatNumber(summary.used_minutes || 0)} total minutes · ${formatNumber(summary.child_message_count || 0)} child messages
       `;
       document.getElementById('childReportAnalysis').innerHTML = `
@@ -3115,10 +3143,8 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
             </p>
           </article>
 
-          ${rangeCards}
-
           <article class="report-analysis-card full">
-            <h4>${escapeHtml(range.title)} Breakdown</h4>
+            <h4>Usage Breakdown</h4>
             ${bucketRows || '<div class="report-list-item">No usage record was captured in this window.</div>'}
           </article>
         </div>
@@ -3377,12 +3403,22 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       button.disabled = true;
       button.textContent = 'Saving...';
 
+      let periodDays;
+      try {
+        periodDays = getAutoReportFrequencyDaysValue();
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = 'Save Schedule';
+        showPageAlert(error.message || 'Failed to save report settings.', 'error');
+        return;
+      }
+
       const formData = new FormData();
       formData.append('csrf_token', CSRF_TOKEN);
       formData.append('child_id', childId);
       formData.append('auto_generate_enabled', document.getElementById('autoReportEnabled').checked ? '1' : '0');
-      formData.append('auto_generate_period_days', document.getElementById('autoReportFrequency').value);
-      formData.append('auto_generate_frequency_days', document.getElementById('autoReportFrequency').value);
+      formData.append('auto_generate_period_days', periodDays);
+      formData.append('auto_generate_frequency_days', periodDays);
 
       try {
         const response = await fetch(CHILD_REPORT_SETTINGS_API_URL, {
@@ -3912,6 +3948,10 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
 
     document.getElementById('saveReportSettingsBtn').addEventListener('click', () => {
       saveReportSettings();
+    });
+
+    document.getElementById('autoReportFrequency').addEventListener('change', () => {
+      handleAutoReportFrequencyChange();
     });
 
     const childNameInput = document.getElementById('child_name');

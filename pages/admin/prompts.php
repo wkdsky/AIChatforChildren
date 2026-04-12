@@ -1,94 +1,112 @@
 <?php
 use Utils\Helper;
+use Utils\PromptTemplateService;
 
 $user = $_SESSION['user'];
 $csrfToken = Helper::generateCsrfToken();
-
-// Database connection
 $pdo = Core\Database::getInstance();
+$promptService = new PromptTemplateService($pdo);
+$promptService->ensureDefaultTemplates();
+$promptsUrl = Helper::url('admin/prompts');
 
-// Check if prompt_templates table exists
-$tableExists = $pdo->query("SHOW TABLES LIKE 'prompt_templates'")->rowCount() > 0;
+$redirectToPrompts = static function () use ($promptsUrl): void {
+    header('Location: ' . $promptsUrl);
+    exit;
+};
 
-if (!$tableExists) {
-    // Create prompt_templates table
-    $createTableSQL = "CREATE TABLE IF NOT EXISTS prompt_templates (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        category VARCHAR(50) DEFAULT 'general',
-        content TEXT NOT NULL,
-        description TEXT,
-        is_active BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    )";
-    $pdo->exec($createTableSQL);
-}
+$formatCategoryLabel = static function (string $category): string {
+    return ucwords(str_replace('_', ' ', $category));
+};
 
-// Get all prompt templates
-$promptsStmt = $pdo->query("SELECT * FROM prompt_templates ORDER BY category, name");
-$prompts = $promptsStmt->fetchAll();
-
-// Handle form submission for editing prompt
 $editingPrompt = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if ($_POST['action'] === 'edit' && !empty($_POST['prompt_id'])) {
-        $promptId = $_POST['prompt_id'];
-        $stmt = $pdo->prepare("SELECT * FROM prompt_templates WHERE id = ?");
-        $stmt->execute([$promptId]);
-        $editingPrompt = $stmt->fetch();
-    } elseif ($_POST['action'] === 'update' && !empty($_POST['prompt_id'])) {
-        $promptId = $_POST['prompt_id'];
-        $name = $_POST['name'];
-        $category = $_POST['category'];
-        $content = $_POST['content'];
-        $description = $_POST['description'] ?? '';
+    if (!Helper::verifyCsrfToken($_POST['csrf_token'] ?? null)) {
+        $_SESSION['error_message'] = 'Invalid CSRF token.';
+        $redirectToPrompts();
+    }
+
+    $action = trim((string) ($_POST['action'] ?? ''));
+    $promptId = (int) ($_POST['prompt_id'] ?? 0);
+
+    if ($action === 'edit' && $promptId > 0) {
+        $editingPrompt = $promptService->getTemplateById($promptId);
+    } elseif ($action === 'update' && $promptId > 0) {
+        $existingPrompt = $promptService->getTemplateById($promptId);
+        if (!$existingPrompt) {
+            $_SESSION['error_message'] = 'Prompt template not found.';
+            $redirectToPrompts();
+        }
+
+        $name = trim((string) ($_POST['name'] ?? ''));
+        $category = trim((string) ($_POST['category'] ?? 'general'));
+        $content = trim((string) ($_POST['content'] ?? ''));
+        $description = trim((string) ($_POST['description'] ?? ''));
         $isActive = isset($_POST['is_active']) ? 1 : 0;
 
-        $stmt = $pdo->prepare("UPDATE prompt_templates SET name = ?, category = ?, content = ?, description = ?, is_active = ? WHERE id = ?");
-        $stmt->execute([$name, $category, $content, $description, $isActive, $promptId]);
+        $stmt = $pdo->prepare(
+            "UPDATE prompt_templates
+            SET name = ?, category = ?, content = ?, description = ?, is_active = ?
+            WHERE id = ?"
+        );
+        $stmt->execute([$name, $category !== '' ? $category : 'general', $content, $description, $isActive, $promptId]);
 
-        $_SESSION['success_message'] = "Prompt template updated successfully!";
-        header("Location: " . Helper::url('admin/prompts'));
-        exit;
-    } elseif ($_POST['action'] === 'create') {
-        $name = $_POST['name'];
-        $category = $_POST['category'];
-        $content = $_POST['content'];
-        $description = $_POST['description'] ?? '';
+        $_SESSION['success_message'] = 'Prompt template updated successfully!';
+        $redirectToPrompts();
+    } elseif ($action === 'create') {
+        $name = trim((string) ($_POST['name'] ?? ''));
+        $category = trim((string) ($_POST['category'] ?? 'general'));
+        $content = trim((string) ($_POST['content'] ?? ''));
+        $description = trim((string) ($_POST['description'] ?? ''));
         $isActive = isset($_POST['is_active']) ? 1 : 0;
+        $templateKey = $promptService->generateTemplateKey($category !== '' ? $category : 'general', $name);
 
-        $stmt = $pdo->prepare("INSERT INTO prompt_templates (name, category, content, description, is_active) VALUES (?, ?, ?, ?, ?)");
-        $stmt->execute([$name, $category, $content, $description, $isActive]);
+        $stmt = $pdo->prepare(
+            "INSERT INTO prompt_templates (template_key, name, category, content, description, is_active)
+            VALUES (?, ?, ?, ?, ?, ?)"
+        );
+        $stmt->execute([
+            $templateKey,
+            $name,
+            $category !== '' ? $category : 'general',
+            $content,
+            $description,
+            $isActive,
+        ]);
 
-        $_SESSION['success_message'] = "Prompt template created successfully!";
-        header("Location: " . Helper::url('admin/prompts'));
-        exit;
-    } elseif ($_POST['action'] === 'delete' && !empty($_POST['prompt_id'])) {
-        $promptId = $_POST['prompt_id'];
+        $_SESSION['success_message'] = 'Prompt template created successfully!';
+        $redirectToPrompts();
+    } elseif ($action === 'delete' && $promptId > 0) {
+        $existingPrompt = $promptService->getTemplateById($promptId);
+        if (!$existingPrompt) {
+            $_SESSION['error_message'] = 'Prompt template not found.';
+            $redirectToPrompts();
+        }
+
+        $templateKey = (string) ($existingPrompt['template_key'] ?? '');
+        if (PromptTemplateService::isDefaultTemplateKey($templateKey)) {
+            $_SESSION['error_message'] = 'Built-in system templates cannot be deleted.';
+            $redirectToPrompts();
+        }
+
         $stmt = $pdo->prepare("DELETE FROM prompt_templates WHERE id = ?");
         $stmt->execute([$promptId]);
 
-        $_SESSION['success_message'] = "Prompt template deleted successfully!";
-        header("Location: " . Helper::url('admin/prompts'));
-        exit;
+        $_SESSION['success_message'] = 'Prompt template deleted successfully!';
+        $redirectToPrompts();
     }
 }
 
-// Handle edit request from GET
 if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
-    $promptId = $_GET['edit'];
-    $stmt = $pdo->prepare("SELECT * FROM prompt_templates WHERE id = ?");
-    $stmt->execute([$promptId]);
-    $editingPrompt = $stmt->fetch();
+    $promptId = (int) $_GET['edit'];
+    $editingPrompt = $promptService->getTemplateById($promptId);
     if (!$editingPrompt) {
-        $_SESSION['error_message'] = "Prompt template not found!";
-        header("Location: " . Helper::url('admin/prompts'));
-        exit;
+        $_SESSION['error_message'] = 'Prompt template not found!';
+        $redirectToPrompts();
     }
 }
 
-// Group prompts by category
+$prompts = $promptService->getAllTemplates();
+$formCategories = $promptService->getFormCategories($prompts);
 $categories = [];
 foreach ($prompts as $prompt) {
     if (!isset($categories[$prompt['category']])) {
@@ -96,6 +114,7 @@ foreach ($prompts as $prompt) {
     }
     $categories[$prompt['category']][] = $prompt;
 }
+ksort($categories);
 ?>
 
 <!DOCTYPE html>
@@ -213,14 +232,28 @@ foreach ($prompts as $prompt) {
                                 <label for="category">Category *</label>
                                 <select id="category" name="category" required>
                                     <option value="">Select Category</option>
-                                    <option value="general" <?php echo ($editingPrompt && $editingPrompt['category'] === 'general') ? 'selected' : ''; ?>>General</option>
-                                    <option value="welcome" <?php echo ($editingPrompt && $editingPrompt['category'] === 'welcome') ? 'selected' : ''; ?>>Welcome</option>
-                                    <option value="help" <?php echo ($editingPrompt && $editingPrompt['category'] === 'help') ? 'selected' : ''; ?>>Help</option>
-                                    <option value="education" <?php echo ($editingPrompt && $editingPrompt['category'] === 'education') ? 'selected' : ''; ?>>Education</option>
-                                    <option value="entertainment" <?php echo ($editingPrompt && $editingPrompt['category'] === 'entertainment') ? 'selected' : ''; ?>>Entertainment</option>
+                                    <?php foreach ($formCategories as $category): ?>
+                                        <option value="<?php echo htmlspecialchars($category); ?>" <?php echo ($editingPrompt && $editingPrompt['category'] === $category) ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($formatCategoryLabel($category)); ?>
+                                        </option>
+                                    <?php endforeach; ?>
                                 </select>
                             </div>
                         </div>
+
+                        <?php if ($editingPrompt): ?>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="template_key">Template Key</label>
+                                    <input type="text" id="template_key" value="<?php echo htmlspecialchars($editingPrompt['template_key'] ?? ''); ?>" readonly>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Template Type</label>
+                                    <input type="text" value="<?php echo PromptTemplateService::isDefaultTemplateKey((string) ($editingPrompt['template_key'] ?? '')) ? 'Built-in system template' : 'Custom template'; ?>" readonly>
+                                </div>
+                            </div>
+                        <?php endif; ?>
 
                         <div class="form-group">
                             <label for="description">Description</label>
@@ -233,8 +266,14 @@ foreach ($prompts as $prompt) {
                             <label for="content">Prompt Content *</label>
                             <textarea id="content" name="content" rows="8" required
                                       placeholder="Enter the prompt template content..."><?php echo $editingPrompt ? htmlspecialchars($editingPrompt['content']) : ''; ?></textarea>
-                            <small>Use variables like {name} for dynamic content</small>
+                            <small class="form-help">Use variables like {name} for dynamic content. Child chat templates support {child_profile}, {child_name}, {age_band}, and {age_years}.</small>
                         </div>
+
+                        <?php if ($editingPrompt && PromptTemplateService::isDefaultTemplateKey((string) ($editingPrompt['template_key'] ?? ''))): ?>
+                            <div class="form-note">
+                                Disabling a built-in child chat template makes the system fall back to its default prompt content.
+                            </div>
+                        <?php endif; ?>
 
                         <div class="form-group">
                             <label class="checkbox-label">
@@ -279,12 +318,13 @@ foreach ($prompts as $prompt) {
                         <div class="category-section">
                             <h3 class="category-title">
                                 <i class="fas fa-folder"></i>
-                                <?php echo ucfirst($category); ?>
+                                <?php echo htmlspecialchars($formatCategoryLabel((string) $category)); ?>
                                 <span class="template-count"><?php echo count($categoryPrompts); ?></span>
                             </h3>
 
                             <div class="templates-grid">
                                 <?php foreach ($categoryPrompts as $prompt): ?>
+                                    <?php $isSystemTemplate = PromptTemplateService::isDefaultTemplateKey((string) ($prompt['template_key'] ?? '')); ?>
                                     <div class="prompt-card">
                                         <div class="prompt-header">
                                             <h4><?php echo htmlspecialchars($prompt['name']); ?></h4>
@@ -305,6 +345,13 @@ foreach ($prompts as $prompt) {
                                             <p class="prompt-description"><?php echo htmlspecialchars($prompt['description']); ?></p>
                                         <?php endif; ?>
 
+                                        <div class="prompt-key-row">
+                                            <span class="prompt-key"><?php echo htmlspecialchars((string) ($prompt['template_key'] ?? '')); ?></span>
+                                            <?php if ($isSystemTemplate): ?>
+                                                <span class="system-badge">Built-in</span>
+                                            <?php endif; ?>
+                                        </div>
+
                                         <div class="prompt-content">
                                             <?php
                                             $content = $prompt['content'];
@@ -320,23 +367,20 @@ foreach ($prompts as $prompt) {
                                         </div>
 
                                         <div class="prompt-actions">
-                                            <form method="POST" style="display: inline;">
-                                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
-                                                <input type="hidden" name="action" value="edit">
-                                                <input type="hidden" name="prompt_id" value="<?php echo $prompt['id']; ?>">
-                                                <button type="submit" class="btn btn-sm btn-primary">
-                                                    <i class="fas fa-edit"></i> Edit
-                                                </button>
-                                            </form>
-                                            <form method="POST" style="display: inline;"
-                                                  onsubmit="return confirm('Are you sure you want to delete this prompt template?');">
-                                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
-                                                <input type="hidden" name="action" value="delete">
-                                                <input type="hidden" name="prompt_id" value="<?php echo $prompt['id']; ?>">
-                                                <button type="submit" class="btn btn-sm btn-danger">
-                                                    <i class="fas fa-trash"></i> Delete
-                                                </button>
-                                            </form>
+                                            <a href="<?php echo Helper::url('admin/prompts?edit=' . (int) $prompt['id']); ?>" class="btn btn-sm btn-primary">
+                                                <i class="fas fa-edit"></i> Edit
+                                            </a>
+                                            <?php if (!$isSystemTemplate): ?>
+                                                <form method="POST" style="display: inline;"
+                                                      onsubmit="return confirm('Are you sure you want to delete this prompt template?');">
+                                                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
+                                                    <input type="hidden" name="action" value="delete">
+                                                    <input type="hidden" name="prompt_id" value="<?php echo $prompt['id']; ?>">
+                                                    <button type="submit" class="btn btn-sm btn-danger">
+                                                        <i class="fas fa-trash"></i> Delete
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                 <?php endforeach; ?>
@@ -432,6 +476,36 @@ foreach ($prompts as $prompt) {
             margin-bottom: 15px;
         }
 
+        .prompt-key-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .prompt-key {
+            display: inline-flex;
+            align-items: center;
+            background: #eef3f8;
+            color: #2c3e50;
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .system-badge {
+            display: inline-flex;
+            align-items: center;
+            background: #eaf7ef;
+            color: #1d7a46;
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
         .prompt-content {
             background: white;
             padding: 15px;
@@ -462,6 +536,21 @@ foreach ($prompts as $prompt) {
 
         .prompt-actions form {
             margin: 0;
+        }
+
+        .form-help {
+            display: block;
+            margin-top: 8px;
+            color: #7f8c8d;
+        }
+
+        .form-note {
+            margin-top: 12px;
+            padding: 12px 14px;
+            border-radius: 8px;
+            background: #eef6ff;
+            color: #2f5f87;
+            font-size: 14px;
         }
 
         @media (max-width: 768px) {

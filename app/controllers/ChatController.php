@@ -3,7 +3,10 @@
 namespace App\Controllers;
 
 use Core\Config;
+use Core\Database;
 use Utils\Helper;
+use Utils\PromptTemplateService;
+use DateTimeImmutable;
 
 class ChatController
 {
@@ -12,6 +15,8 @@ class ChatController
     private string $llmApiKey;
     private string $llmModel;
     private int $timeout = 120;
+    private ?array $resolvedChildProfile = null;
+    private ?PromptTemplateService $promptTemplateService = null;
 
     public function __construct()
     {
@@ -53,7 +58,8 @@ class ChatController
         }
 
         $userMessage = trim((string)($input['user_message'] ?? $this->getLatestUserMessage($messages)));
-        $childAgeBand = $this->resolveChildAgeBand($input);
+        $childProfile = $this->resolveChildProfile($input);
+        $childAgeBand = $childProfile['age_band'] ?? null;
         $knowledgeCommand = $this->parseKnowledgeCommand($userMessage);
 
         if ($knowledgeCommand !== null) {
@@ -96,7 +102,7 @@ class ChatController
         $knowledge = $userMessage !== ''
             ? $this->fetchKnowledgeContext($userMessage, 3, 'child', $childAgeBand)
             : ['context' => '', 'sources' => []];
-        $messagesForModel = $this->buildModelMessages($messages, $knowledge, $userMessage);
+        $messagesForModel = $this->buildModelMessages($messages, $knowledge, $userMessage, $childProfile);
 
         if (session_status() === PHP_SESSION_ACTIVE) {
             session_write_close();
@@ -463,12 +469,105 @@ class ChatController
         return null;
     }
 
-    private function buildModelMessages(array $messages, array $knowledge, string $latestUserMessage = ''): array
+    private function resolveChildProfile(array $input): array
     {
-        $systemMessages = [[
-            'role' => 'system',
-            'content' => $this->buildReplyLanguagePrompt($latestUserMessage)
-        ]];
+        if ($this->resolvedChildProfile !== null) {
+            return $this->resolvedChildProfile;
+        }
+
+        $profile = [
+            'id' => (int) ($_SESSION['user']['id'] ?? 0),
+            'name' => trim((string) ($_SESSION['user']['name'] ?? '')),
+            'role' => trim((string) ($_SESSION['user']['role'] ?? '')),
+            'birth_date' => null,
+            'age_years' => null,
+            'age_band' => null,
+        ];
+
+        if ($profile['role'] === 'child' && $profile['id'] > 0) {
+            $stmt = Database::getInstance()->prepare(
+                "SELECT name, birth_date
+                FROM users
+                WHERE id = :id AND role = 'child'
+                LIMIT 1"
+            );
+            $stmt->execute(['id' => $profile['id']]);
+            $row = $stmt->fetch();
+
+            if (is_array($row)) {
+                $profile['name'] = trim((string) ($row['name'] ?? $profile['name']));
+                $profile['birth_date'] = $row['birth_date'] ?? null;
+                $profile['age_years'] = $this->calculateAgeYears($profile['birth_date']);
+                $profile['age_band'] = $this->mapAgeYearsToBand($profile['age_years']);
+            }
+        }
+
+        if ($profile['age_band'] === null) {
+            $profile['age_band'] = $this->resolveChildAgeBand($input);
+        }
+
+        if ($profile['age_band'] === null && $profile['role'] === 'child') {
+            $profile['age_band'] = '6_12';
+        }
+
+        $this->resolvedChildProfile = $profile;
+        return $profile;
+    }
+
+    private function calculateAgeYears(?string $birthDate): ?int
+    {
+        if ($birthDate === null || trim($birthDate) === '') {
+            return null;
+        }
+
+        try {
+            $birth = new DateTimeImmutable($birthDate);
+            $today = new DateTimeImmutable('today');
+        } catch (\Exception $e) {
+            return null;
+        }
+
+        return max(0, $birth->diff($today)->y);
+    }
+
+    private function mapAgeYearsToBand(?int $ageYears): ?string
+    {
+        if ($ageYears === null) {
+            return null;
+        }
+
+        if ($ageYears < 3) {
+            return '0_3';
+        }
+
+        if ($ageYears < 6) {
+            return '3_6';
+        }
+
+        if ($ageYears < 12) {
+            return '6_12';
+        }
+
+        return '12_18';
+    }
+
+    private function buildModelMessages(
+        array $messages,
+        array $knowledge,
+        string $latestUserMessage = '',
+        array $childProfile = []
+    ): array
+    {
+        $systemMessages = [
+            [
+                'role' => 'system',
+                'content' => $this->buildReplyLanguagePrompt($latestUserMessage)
+            ],
+            [
+                'role' => 'system',
+                'content' => $this->buildChildResponseSystemPrompt($childProfile)
+            ],
+        ];
 
         $knowledgeContext = trim((string)($knowledge['context'] ?? ''));
         if ($knowledgeContext === '') {
@@ -491,6 +590,89 @@ class ChatController
         ];
 
         return array_merge($systemMessages, $messages);
+    }
+
+    private function buildChildResponseSystemPrompt(array $childProfile): string
+    {
+        $ageBand = (string) ($childProfile['age_band'] ?? '6_12');
+        $promptVariables = $this->buildChildPromptVariables($childProfile);
+
+        $basePrompt = $this->getPromptTemplateContent('child_chat_core_safety', $promptVariables);
+        $agePrompt = $this->buildAgeSpecificPrompt($ageBand, $promptVariables);
+
+        return implode("\n\n", array_filter([
+            trim($basePrompt),
+            trim($agePrompt),
+        ]));
+    }
+
+    private function buildAgeSpecificPrompt(string $ageBand, array $variables = []): string
+    {
+        $templateKey = match ($ageBand) {
+            '0_3' => 'child_chat_age_0_3',
+            '3_6' => 'child_chat_age_3_6',
+            '12_18' => 'child_chat_age_12_18',
+            default => 'child_chat_age_6_12',
+        };
+
+        return $this->getPromptTemplateContent($templateKey, $variables);
+    }
+
+    private function buildChildPromptVariables(array $childProfile): array
+    {
+        $ageBand = (string) ($childProfile['age_band'] ?? '6_12');
+        $ageYears = $childProfile['age_years'] ?? null;
+        $childName = trim((string) ($childProfile['name'] ?? 'child'));
+
+        return [
+            '{child_profile}' => $this->buildChildProfileSummary($childProfile),
+            '{child_name}' => $childName !== '' ? $childName : 'child',
+            '{age_band}' => $ageBand,
+            '{age_years}' => $ageYears !== null ? (string) $ageYears : 'unknown',
+        ];
+    }
+
+    private function buildChildProfileSummary(array $childProfile): string
+    {
+        $ageBand = (string) ($childProfile['age_band'] ?? '6_12');
+        $ageYears = $childProfile['age_years'] ?? null;
+
+        if ($ageYears !== null) {
+            return sprintf('role=child, age_band=%s, about %d years old', $ageBand, $ageYears);
+        }
+
+        return sprintf('role=child, age_band=%s, age not known exactly', $ageBand);
+    }
+
+    private function getPromptTemplateContent(string $templateKey, array $variables = []): string
+    {
+        $fallback = PromptTemplateService::getDefaultContent($templateKey);
+
+        try {
+            $content = $this->getPromptTemplateService()->getTemplateContent($templateKey, $fallback);
+        } catch (\Throwable $e) {
+            $content = $fallback;
+        }
+
+        return $this->renderPromptTemplate($content, $variables);
+    }
+
+    private function renderPromptTemplate(string $content, array $variables = []): string
+    {
+        if ($variables === []) {
+            return trim($content);
+        }
+
+        return trim(strtr($content, $variables));
+    }
+
+    private function getPromptTemplateService(): PromptTemplateService
+    {
+        if ($this->promptTemplateService === null) {
+            $this->promptTemplateService = new PromptTemplateService(Database::getInstance());
+        }
+
+        return $this->promptTemplateService;
     }
 
     private function buildReplyLanguagePrompt(string $latestUserMessage): string

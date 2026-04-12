@@ -95,6 +95,92 @@ body {
     border-bottom-left-radius: 4px;
 }
 
+.message.ai-markdown h1,
+.message.ai-markdown h2,
+.message.ai-markdown h3,
+.message.ai-markdown h4,
+.message.ai-markdown h5,
+.message.ai-markdown h6 {
+    margin: 0 0 10px;
+    line-height: 1.28;
+    color: #1f2a44;
+}
+
+.message.ai-markdown h1 {
+    font-size: 1.45rem;
+}
+
+.message.ai-markdown h2 {
+    font-size: 1.28rem;
+}
+
+.message.ai-markdown h3 {
+    font-size: 1.14rem;
+}
+
+.message.ai-markdown h4,
+.message.ai-markdown h5,
+.message.ai-markdown h6 {
+    font-size: 1rem;
+}
+
+.message.ai-markdown p {
+    margin: 0 0 10px;
+}
+
+.message.ai-markdown p:last-child {
+    margin-bottom: 0;
+}
+
+.message.ai-markdown ul,
+.message.ai-markdown ol {
+    margin: 0 0 10px 20px;
+    padding: 0;
+}
+
+.message.ai-markdown li {
+    margin-bottom: 5px;
+}
+
+.message.ai-markdown code {
+    background: #eef3fb;
+    color: #284061;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.92em;
+}
+
+.message.ai-markdown pre {
+    margin: 0 0 10px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #0f172a;
+    color: #f8fafc;
+    overflow-x: auto;
+}
+
+.message.ai-markdown pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+}
+
+.message.ai-markdown blockquote {
+    margin: 0 0 10px;
+    padding: 10px 12px;
+    border-left: 3px solid #8aa5ff;
+    background: #f6f8ff;
+    border-radius: 10px;
+    color: #3b4d68;
+}
+
+.message.ai-markdown hr {
+    border: 0;
+    border-top: 1px solid #dbe4f3;
+    margin: 12px 0;
+}
+
 .message.system {
     background: #e3f2fd;
     color: #1976d2;

@@ -9,7 +9,8 @@ use DateTimeImmutable;
 
 class ChildReportService
 {
-    private const ALLOWED_DAYS = [7, 14, 30];
+    private const MIN_REPORT_DAYS = 1;
+    private const MAX_REPORT_DAYS = 90;
     private const REPORT_REQUIRED_KEYS = [
         'headline',
         'sample_confidence',
@@ -60,7 +61,7 @@ class ChildReportService
     public function normalizeDays($value, int $default = 14): int
     {
         $days = (int) $value;
-        if (!in_array($days, self::ALLOWED_DAYS, true)) {
+        if ($days < self::MIN_REPORT_DAYS || $days > self::MAX_REPORT_DAYS) {
             return $default;
         }
 
@@ -119,9 +120,19 @@ class ChildReportService
         $now = AppTime::now();
 
         $existing = $this->getSettings($childId, $parentId);
-        $nextDueAt = $enabled
-            ? ($existing['next_report_due_at'] ?? $now->format('Y-m-d H:i:s'))
-            : null;
+        $existingPeriodDays = $this->resolveAutoReportPeriodDays($existing, 7);
+        $shouldResetSchedule = $enabled && (
+            empty($existing['auto_generate_enabled'])
+            || empty($existing['next_report_due_at'])
+            || $existingPeriodDays !== $periodDays
+        );
+        $nextDueAt = null;
+
+        if ($enabled) {
+            $nextDueAt = $shouldResetSchedule
+                ? $now->add(new DateInterval('P' . $periodDays . 'D'))->format('Y-m-d H:i:s')
+                : ($existing['next_report_due_at'] ?? null);
+        }
 
         $saved = $this->reportModel->upsertReportSettings($childId, $parentId, [
             'auto_generate_enabled' => $enabled,

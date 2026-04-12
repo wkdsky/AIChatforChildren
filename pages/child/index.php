@@ -581,7 +581,8 @@ $csrfToken = Helper::generateCsrfToken();
                 sessionLeft: '今日剩余 {minutes} 分钟',
                 sessionWindow: '已用 {used}/{total} 分钟 · 时段 {start}-{end} · 服务器 {current_time} ({timezone})',
                 sessionEndedTitle: '本次使用已结束',
-                sessionEndedText: '可用时段已结束或家长已暂停登录，正在返回登录页。'
+                sessionEndedText: '可用时段已结束或家长已暂停登录，正在返回登录页。',
+                aiNotice: '提示：Bitty 是 AI 助手，不是真人。你可以在这里提问和一起思考；如果遇到危险、被威胁，或想伤害自己或别人，请马上告诉信任的大人。'
             },
             'en-US': {
                 chatTitle: 'Bitty Chat',
@@ -616,7 +617,8 @@ $csrfToken = Helper::generateCsrfToken();
                 sessionLeft: '{minutes} min left today',
                 sessionWindow: 'Used {used}/{total} min · Window {start}-{end} · Server {current_time} ({timezone})',
                 sessionEndedTitle: 'Session ended',
-                sessionEndedText: 'Your access window has ended or a parent paused login. Redirecting to sign in...'
+                sessionEndedText: 'Your access window has ended or a parent paused login. Redirecting to sign in...',
+                aiNotice: 'Note: Bitty is an AI assistant, not a real person. You can ask questions and think together here. If anything feels unsafe or urgent, tell a trusted adult right away.'
             }
         };
 
@@ -682,6 +684,10 @@ $csrfToken = Helper::generateCsrfToken();
 
             // Re-render chat list with updated language
             renderChatList();
+
+            if (currentChatId && conversationHistory.length === 0 && !isProcessing) {
+                renderChatMessages();
+            }
 
             if (latestChildSessionStatus) {
                 renderChildSessionStatus(latestChildSessionStatus);
@@ -1048,7 +1054,7 @@ $csrfToken = Helper::generateCsrfToken();
             // If current chat is empty (no messages), don't create new one
             if (currentChatId && conversationHistory.length === 0) {
                 // Already have an empty chat, just ensure it's highlighted
-                clearChatBox();
+                renderChatMessages();
                 renderChatList();
                 console.log('Current chat is empty, not creating new one');
                 return;
@@ -1070,7 +1076,7 @@ $csrfToken = Helper::generateCsrfToken();
                     currentChatAutoRenamed = false;
                     conversationHistory = [];
                     renderChatList();
-                    clearChatBox();
+                    renderChatMessages();
                     console.log('New chat created successfully:', newChat);
                 } else if (result.error) {
                     console.error('API error:', result.error);
@@ -1221,6 +1227,11 @@ $csrfToken = Helper::generateCsrfToken();
         // Render chat messages from history
         function renderChatMessages() {
             clearChatBox();
+            if (conversationHistory.length === 0) {
+                showAiDisclosureNotice();
+                return;
+            }
+
             conversationHistory.forEach(msg => {
                 addMessage(msg.content, msg.role === 'user' ? 'user' : 'bot', false);
             });
@@ -1267,6 +1278,134 @@ $csrfToken = Helper::generateCsrfToken();
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function renderInlineMarkdown(text) {
+            let html = escapeHtml(text);
+            html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+            return html;
+        }
+
+        function renderAssistantMarkdown(text) {
+            const codeBlocks = [];
+            const placeholderPrefix = '__BITTY_CODE_BLOCK__';
+            let working = String(text || '').replace(/\r\n?/g, '\n');
+
+            working = working.replace(/```([a-zA-Z0-9_-]+)?\n([\s\S]*?)```/g, (match, language, code) => {
+                const placeholder = `${placeholderPrefix}${codeBlocks.length}__`;
+                const escapedLanguage = language ? ` class="language-${escapeHtml(language)}"` : '';
+                codeBlocks.push(`<pre><code${escapedLanguage}>${escapeHtml(code.replace(/\n$/, ''))}</code></pre>`);
+                return placeholder;
+            });
+
+            const html = [];
+            const lines = working.split('\n');
+            let paragraphLines = [];
+            let listType = null;
+
+            const flushParagraph = () => {
+                if (paragraphLines.length === 0) {
+                    return;
+                }
+
+                html.push(`<p>${paragraphLines.join('<br>')}</p>`);
+                paragraphLines = [];
+            };
+
+            const flushList = () => {
+                if (!listType) {
+                    return;
+                }
+
+                html.push(listType === 'ul' ? '</ul>' : '</ol>');
+                listType = null;
+            };
+
+            const openList = (nextType) => {
+                flushParagraph();
+                if (listType === nextType) {
+                    return;
+                }
+
+                flushList();
+                html.push(nextType === 'ul' ? '<ul>' : '<ol>');
+                listType = nextType;
+            };
+
+            lines.forEach((line) => {
+                if (line.startsWith(placeholderPrefix) && line.endsWith('__')) {
+                    flushParagraph();
+                    flushList();
+                    html.push(line);
+                    return;
+                }
+
+                if (/^\s*$/.test(line)) {
+                    flushParagraph();
+                    flushList();
+                    return;
+                }
+
+                const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
+                if (headingMatch) {
+                    flushParagraph();
+                    flushList();
+                    const level = headingMatch[1].length;
+                    html.push(`<h${level}>${renderInlineMarkdown(headingMatch[2].trim())}</h${level}>`);
+                    return;
+                }
+
+                const unorderedMatch = line.match(/^\s*[-*]\s+(.*)$/);
+                if (unorderedMatch) {
+                    openList('ul');
+                    html.push(`<li>${renderInlineMarkdown(unorderedMatch[1].trim())}</li>`);
+                    return;
+                }
+
+                const orderedMatch = line.match(/^\s*\d+\.\s+(.*)$/);
+                if (orderedMatch) {
+                    openList('ol');
+                    html.push(`<li>${renderInlineMarkdown(orderedMatch[1].trim())}</li>`);
+                    return;
+                }
+
+                const quoteMatch = line.match(/^\s*>\s+(.*)$/);
+                if (quoteMatch) {
+                    flushParagraph();
+                    flushList();
+                    html.push(`<blockquote>${renderInlineMarkdown(quoteMatch[1].trim())}</blockquote>`);
+                    return;
+                }
+
+                if (/^\s*---+\s*$/.test(line)) {
+                    flushParagraph();
+                    flushList();
+                    html.push('<hr>');
+                    return;
+                }
+
+                flushList();
+                paragraphLines.push(renderInlineMarkdown(line.trimEnd()));
+            });
+
+            flushParagraph();
+            flushList();
+
+            return html
+                .join('')
+                .replace(new RegExp(`${placeholderPrefix}(\\d+)__`, 'g'), (match, index) => codeBlocks[Number(index)] || '');
+        }
+
+        function showAiDisclosureNotice() {
+            addInfoMessage(t('aiNotice'));
+        }
+
+        function markdownToPlainText(text) {
+            const container = document.createElement('div');
+            container.innerHTML = renderAssistantMarkdown(text);
+            return (container.textContent || container.innerText || '').trim();
         }
 
         // New chat button click handler
@@ -1405,14 +1544,24 @@ $csrfToken = Helper::generateCsrfToken();
         }
 
         function addMessage(text, sender, save = true) {
+            if (sender === 'user' && conversationHistory.length === 0 && chatBox.querySelector('.message.info')) {
+                clearChatBox();
+            }
+
             const messageDiv = document.createElement("div");
             messageDiv.classList.add("message");
+            const isAssistantMessage = sender === 'bot' || sender === 'assistant';
 
             if (sender === 'user') {
                 messageDiv.classList.add("user");
+                messageDiv.textContent = text;
+            } else if (isAssistantMessage) {
+                messageDiv.classList.add("assistant", "ai-markdown");
+                messageDiv.innerHTML = renderAssistantMarkdown(text);
+            } else {
+                messageDiv.textContent = text;
             }
 
-            messageDiv.textContent = text;
             chatBox.insertBefore(messageDiv, typingIndicator);
             chatBox.scrollTop = chatBox.scrollHeight;
         }
@@ -1494,7 +1643,7 @@ $csrfToken = Helper::generateCsrfToken();
                 typingIndicator.style.display = 'none';
 
                 aiMessageDiv = document.createElement("div");
-                aiMessageDiv.classList.add("message");
+                aiMessageDiv.classList.add("message", "assistant", "ai-markdown");
                 chatBox.insertBefore(aiMessageDiv, typingIndicator);
 
                 const reader = response.body.getReader();
@@ -1535,7 +1684,7 @@ $csrfToken = Helper::generateCsrfToken();
 
                             if (content) {
                                 fullResponse += content;
-                                aiMessageDiv.textContent = fullResponse;
+                                aiMessageDiv.innerHTML = renderAssistantMarkdown(fullResponse);
                                 chatBox.scrollTop = chatBox.scrollHeight;
                             }
                         } catch (e) {
@@ -1560,7 +1709,7 @@ $csrfToken = Helper::generateCsrfToken();
 
                 // Only read aloud if this is a voice chat
                 if (isVoiceChat) {
-                    textToSpeech(fullResponse);
+                    textToSpeech(markdownToPlainText(fullResponse));
                 }
 
                 console.log("消息处理完成");
