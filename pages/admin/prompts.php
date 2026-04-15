@@ -269,6 +269,12 @@ ksort($categories);
                             <small class="form-help">Use variables like {name} for dynamic content. Child chat templates support {child_profile}, {child_name}, {age_band}, and {age_years}.</small>
                         </div>
 
+                        <?php if ($editingPrompt && ($editingPrompt['category'] ?? '') === 'child_chat'): ?>
+                            <div class="form-note">
+                                Child chat always follows the backend child account identity. Self-claims like "I am an adult" do not switch the session out of child-safe mode.
+                            </div>
+                        <?php endif; ?>
+
                         <?php if ($editingPrompt && PromptTemplateService::isDefaultTemplateKey((string) ($editingPrompt['template_key'] ?? ''))): ?>
                             <div class="form-note">
                                 Disabling a built-in child chat template makes the system fall back to its default prompt content.
