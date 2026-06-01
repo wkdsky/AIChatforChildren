@@ -319,6 +319,13 @@ class AppRouter
             $controller->create();
         });
 
+        $router->get('/api/parent/children/prompt', function () {
+            Middleware::requireAuth();
+            Middleware::requireParent();
+            $controller = new ParentChildController();
+            $controller->prompt();
+        });
+
         $router->post('/api/parent/children/update', function () {
             Middleware::requireAuth();
             Middleware::requireParent();

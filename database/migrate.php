@@ -13,6 +13,7 @@ usort($files, function ($a, $b) {
     $priorityMap = [
         'CreateUsersTable' => 10,
         'AddChildAccountFieldsToUsersTable' => 20,
+        'CreateChildPromptProfilesTable' => 25,
         'CreateChildDailyUsageTable' => 30,
         'CreateChildDailyLoginsTable' => 35,
         'CreateConversationsTable' => 40,

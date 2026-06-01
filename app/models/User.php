@@ -47,7 +47,7 @@ class User extends BaseModel
         return $stmt->execute([$name, $email, $password, $role, $verificationCode]);
     }
 
-    public function createChildUserForParent($parentId, array $childData)
+    public function createChildUserForParent($parentId, array $childData): ?int
     {
         $sql = "INSERT INTO {$this->table} (
             name,
@@ -78,7 +78,7 @@ class User extends BaseModel
         )";
 
         $stmt = $this->pdo->prepare($sql);
-        return $stmt->execute([
+        $created = $stmt->execute([
             'name' => $childData['name'],
             'email' => $childData['email'],
             'password' => $childData['password'],
@@ -89,6 +89,12 @@ class User extends BaseModel
             'allowed_login_end' => $childData['allowed_login_end'] ?? '23:50:00',
             'daily_login_minutes' => $childData['daily_login_minutes'] ?? 120,
         ]);
+
+        if (!$created) {
+            return null;
+        }
+
+        return (int) $this->pdo->lastInsertId();
     }
 
     public function findByEmail($email)

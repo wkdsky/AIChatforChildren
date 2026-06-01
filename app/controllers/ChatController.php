@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use Core\Config;
 use Core\Database;
+use Utils\ChildPromptService;
 use Utils\Helper;
 use Utils\PromptTemplateService;
 use DateTimeImmutable;
@@ -17,6 +18,7 @@ class ChatController
     private int $timeout = 120;
     private ?array $resolvedChildProfile = null;
     private ?PromptTemplateService $promptTemplateService = null;
+    private ?ChildPromptService $childPromptService = null;
 
     public function __construct()
     {
@@ -479,6 +481,7 @@ class ChatController
             'id' => (int) ($_SESSION['user']['id'] ?? 0),
             'name' => trim((string) ($_SESSION['user']['name'] ?? '')),
             'role' => trim((string) ($_SESSION['user']['role'] ?? '')),
+            'parent_id' => null,
             'birth_date' => null,
             'age_years' => null,
             'age_band' => null,
@@ -486,7 +489,7 @@ class ChatController
 
         if ($profile['role'] === 'child' && $profile['id'] > 0) {
             $stmt = Database::getInstance()->prepare(
-                "SELECT name, birth_date
+                "SELECT name, birth_date, parent_id
                 FROM users
                 WHERE id = :id AND role = 'child'
                 LIMIT 1"
@@ -496,6 +499,7 @@ class ChatController
 
             if (is_array($row)) {
                 $profile['name'] = trim((string) ($row['name'] ?? $profile['name']));
+                $profile['parent_id'] = isset($row['parent_id']) ? (int) $row['parent_id'] : null;
                 $profile['birth_date'] = $row['birth_date'] ?? null;
                 $profile['age_years'] = $this->calculateAgeYears($profile['birth_date']);
                 $profile['age_band'] = $this->mapAgeYearsToBand($profile['age_years']);
@@ -600,13 +604,13 @@ class ChatController
         $configurableAccountGuardPrompt = $this->getPromptTemplateContent('child_chat_account_identity_guard', $promptVariables);
 
         $basePrompt = $this->getPromptTemplateContent('child_chat_core_safety', $promptVariables);
-        $agePrompt = $this->buildAgeSpecificPrompt($ageBand, $promptVariables);
+        $childSpecificPrompt = $this->getChildSpecificPromptContent($childProfile, $ageBand, $promptVariables);
 
         return implode("\n\n", array_filter([
             trim($accountGuardPrompt),
             trim($configurableAccountGuardPrompt),
             trim($basePrompt),
-            trim($agePrompt),
+            trim($childSpecificPrompt),
         ]));
     }
 
@@ -634,6 +638,19 @@ class ChatController
         };
 
         return $this->getPromptTemplateContent($templateKey, $variables);
+    }
+
+    private function getChildSpecificPromptContent(array $childProfile, string $ageBand, array $variables = []): string
+    {
+        $fallback = $this->buildAgeSpecificPrompt($ageBand, $variables);
+
+        try {
+            $content = $this->getChildPromptService()->getPromptContentForChild($childProfile, $fallback);
+        } catch (\Throwable $e) {
+            $content = $fallback;
+        }
+
+        return $this->renderPromptTemplate($content, $variables);
     }
 
     private function buildChildPromptVariables(array $childProfile): array
@@ -691,6 +708,15 @@ class ChatController
         }
 
         return $this->promptTemplateService;
+    }
+
+    private function getChildPromptService(): ChildPromptService
+    {
+        if ($this->childPromptService === null) {
+            $this->childPromptService = new ChildPromptService(Database::getInstance());
+        }
+
+        return $this->childPromptService;
     }
 
     private function buildReplyLanguagePrompt(string $latestUserMessage): string

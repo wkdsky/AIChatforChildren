@@ -4,13 +4,17 @@ namespace App\Controllers;
 
 use App\Models\ChildAccount;
 use App\Models\User;
+use Core\Database;
 use DateTimeImmutable;
 use Utils\AppTime;
+use Utils\ChildPromptService;
 use Utils\Helper;
 use Valitron\Validator;
 
 class ParentChildController
 {
+    private const PROMPT_MAX_LENGTH = 24000;
+
     private function jsonResponse(array $data, int $statusCode = 200): void
     {
         http_response_code($statusCode);
@@ -136,6 +140,43 @@ class ParentChildController
         return $time . ':00';
     }
 
+    private function buildChildPromptProfile(array $child): array
+    {
+        return [
+            'id' => (int) ($child['id'] ?? 0),
+            'parent_id' => $this->getParentId(),
+            'name' => trim((string) ($child['name'] ?? '')),
+            'role' => 'child',
+            'birth_date' => $child['birth_date'] ?? null,
+            'age_years' => isset($child['birth_date']) ? $this->calculateAge((string) $child['birth_date']) : null,
+        ];
+    }
+
+    private function formatPromptEditorData(?array $editorData): array
+    {
+        if (!$editorData) {
+            return [
+                'child_id' => 0,
+                'source_age_band' => '6_12',
+                'source_template_key' => 'child_chat_age_6_12',
+                'default_prompt_content' => '',
+                'prompt_content' => '',
+                'is_customized' => false,
+                'updated_at' => null,
+            ];
+        }
+
+        return [
+            'child_id' => (int) ($editorData['child_id'] ?? 0),
+            'source_age_band' => (string) ($editorData['source_age_band'] ?? '6_12'),
+            'source_template_key' => (string) ($editorData['source_template_key'] ?? 'child_chat_age_6_12'),
+            'default_prompt_content' => (string) ($editorData['default_prompt_content'] ?? ''),
+            'prompt_content' => (string) ($editorData['prompt_content'] ?? ''),
+            'is_customized' => !empty($editorData['is_customized']),
+            'updated_at' => AppTime::toIso8601($editorData['updated_at'] ?? null),
+        ];
+    }
+
     public function list(): void
     {
         $childAccount = new ChildAccount();
@@ -144,6 +185,48 @@ class ParentChildController
         $this->jsonResponse([
             'success' => true,
             'children' => $this->formatChildren($children),
+        ]);
+    }
+
+    public function prompt(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+            $this->jsonResponse([
+                'success' => false,
+                'message' => 'Method not allowed.',
+            ], 405);
+        }
+
+        $childId = (int) ($_GET['child_id'] ?? 0);
+        if ($childId <= 0) {
+            $this->jsonResponse([
+                'success' => false,
+                'message' => 'Child account id is required.',
+            ], 422);
+        }
+
+        $childAccount = new ChildAccount();
+        $child = $childAccount->getManagedChildById($childId, $this->getParentId());
+        if (!$child) {
+            $this->jsonResponse([
+                'success' => false,
+                'message' => 'Child account not found.',
+            ], 404);
+        }
+
+        $promptService = new ChildPromptService(Database::getInstance());
+        $editorData = $promptService->getPromptEditorData($this->buildChildPromptProfile($child));
+
+        if ($editorData === null) {
+            $this->jsonResponse([
+                'success' => false,
+                'message' => 'Unable to load child prompt right now.',
+            ], 500);
+        }
+
+        $this->jsonResponse([
+            'success' => true,
+            'prompt_profile' => $this->formatPromptEditorData($editorData),
         ]);
     }
 
@@ -198,18 +281,47 @@ class ParentChildController
             ], 422);
         }
 
-        $created = $user->createChildUserForParent($this->getParentId(), [
-            'name' => $input['child_name'],
-            'email' => $this->generateChildEmail($this->getParentId(), $input['child_name']),
-            'password' => password_hash($input['password'], PASSWORD_BCRYPT),
-            'gender' => $input['gender'],
-            'birth_date' => $input['birth_date'],
-        ]);
+        $pdo = Database::getInstance();
+        $childPromptService = new ChildPromptService($pdo);
 
-        if (!$created) {
+        try {
+            $pdo->beginTransaction();
+
+            $childId = $user->createChildUserForParent($this->getParentId(), [
+                'name' => $input['child_name'],
+                'email' => $this->generateChildEmail($this->getParentId(), $input['child_name']),
+                'password' => password_hash($input['password'], PASSWORD_BCRYPT),
+                'gender' => $input['gender'],
+                'birth_date' => $input['birth_date'],
+            ]);
+
+            if (!$childId) {
+                throw new \RuntimeException('Unable to create child account right now.');
+            }
+
+            $promptProfile = $childPromptService->initializePromptProfileForChild([
+                'id' => $childId,
+                'parent_id' => $this->getParentId(),
+                'name' => $input['child_name'],
+                'role' => 'child',
+                'birth_date' => $input['birth_date'],
+            ]);
+
+            if ($promptProfile === null) {
+                throw new \RuntimeException('Unable to initialize child prompt profile right now.');
+            }
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
             $this->jsonResponse([
                 'success' => false,
-                'message' => 'Unable to create child account right now.',
+                'message' => $e instanceof \RuntimeException
+                    ? $e->getMessage()
+                    : 'Unable to create child account right now.',
             ], 500);
         }
 
@@ -241,7 +353,9 @@ class ParentChildController
             'daily_login_minutes' => trim((string) ($_POST['daily_login_minutes'] ?? '')),
             'password' => (string) ($_POST['password'] ?? ''),
             'confirm_password' => (string) ($_POST['confirm_password'] ?? ''),
+            'prompt_content' => trim((string) ($_POST['prompt_content'] ?? '')),
         ];
+        $promptSubmitted = array_key_exists('prompt_content', $_POST);
 
         $validator = new Validator($input);
         $validator->rule('required', ['child_id', 'allowed_login_start', 'allowed_login_end', 'daily_login_minutes'])->message('{field} is required');
@@ -269,6 +383,14 @@ class ParentChildController
             $validator->rule('required', ['password', 'confirm_password'])->message('{field} is required');
             $validator->rule('lengthMin', 'password', 6)->message('Password must be at least 6 characters');
             $validator->rule('equals', 'password', 'confirm_password')->message('Passwords do not match');
+        }
+
+        if ($promptSubmitted) {
+            if ($input['prompt_content'] === '') {
+                $validator->error('prompt_content', 'Private prompt cannot be empty');
+            } elseif (mb_strlen($input['prompt_content'], 'UTF-8') > self::PROMPT_MAX_LENGTH) {
+                $validator->error('prompt_content', 'Private prompt is too long');
+            }
         }
 
         if (!$validator->validate()) {
@@ -299,13 +421,58 @@ class ParentChildController
             $data['password'] = password_hash($input['password'], PASSWORD_BCRYPT);
         }
 
-        $updated = $childAccount->updateManagedChild($input['child_id'], $this->getParentId(), $data);
+        $settingsChanged = (string) ($existingChild['allowed_login_start'] ?? '') !== $startTime
+            || (string) ($existingChild['allowed_login_end'] ?? '') !== $endTime
+            || (int) ($existingChild['daily_login_minutes'] ?? 0) !== (int) $input['daily_login_minutes']
+            || $passwordProvided;
 
-        if (!$updated) {
+        $childPromptService = new ChildPromptService(Database::getInstance());
+        $promptProfile = $childPromptService->getPromptEditorData($this->buildChildPromptProfile($existingChild));
+        $promptChanged = $promptSubmitted
+            && trim((string) ($promptProfile['prompt_content'] ?? '')) !== $input['prompt_content'];
+
+        if (!$settingsChanged && !$promptChanged) {
             $this->jsonResponse([
                 'success' => false,
                 'message' => 'No changes were saved.',
             ], 400);
+        }
+
+        $pdo = Database::getInstance();
+
+        try {
+            $pdo->beginTransaction();
+
+            if ($settingsChanged) {
+                $updated = $childAccount->updateManagedChild($input['child_id'], $this->getParentId(), $data);
+                if (!$updated) {
+                    throw new \RuntimeException('Unable to update child account settings right now.');
+                }
+            }
+
+            if ($promptChanged) {
+                $savedPrompt = $childPromptService->savePromptContentForChild(
+                    $this->buildChildPromptProfile($existingChild),
+                    $input['prompt_content']
+                );
+
+                if (!$savedPrompt) {
+                    throw new \RuntimeException('Unable to save child private prompt right now.');
+                }
+            }
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
+            $this->jsonResponse([
+                'success' => false,
+                'message' => $e instanceof \RuntimeException
+                    ? $e->getMessage()
+                    : 'Unable to update child account right now.',
+            ], 500);
         }
 
         $children = $childAccount->getManagedChildrenByParentId($this->getParentId());

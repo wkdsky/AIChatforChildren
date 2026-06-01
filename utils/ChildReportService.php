@@ -16,6 +16,7 @@ class ChildReportService
         'sample_confidence',
         'disclaimer',
         'topic_overview',
+        'event_blocks',
         'topics',
         'interests',
         'emotional_overview',
@@ -47,7 +48,7 @@ class ChildReportService
     private const TRANSCRIPT_MAX_TOTAL_CHARS = 22000;
     private const CHILD_MESSAGE_WEIGHT = 1.0;
     private const ASSISTANT_MESSAGE_WEIGHT = 0.2;
-    private const REPORT_PROMPT_VERSION = 'ai-report-v5';
+    private const REPORT_PROMPT_VERSION = 'ai-report-v6';
     private const TREND_PROMPT_VERSION = 'ai-trend-v1';
 
     private ChildReport $reportModel;
@@ -1069,6 +1070,7 @@ class ChildReportService
             'sample_confidence' => $readiness['confidence'] ?? 'none',
             'disclaimer' => 'This report is generated from recent chat and activity context. It is not a diagnosis and should be read together with offline behavior.',
             'topic_overview' => $summaryText,
+            'event_blocks' => [],
             'topics' => [],
             'interests' => [],
             'emotional_overview' => [
@@ -1118,7 +1120,7 @@ class ChildReportService
             $errors[] = 'Invalid sample_confidence value.';
         }
 
-        foreach (['topics', 'interests', 'risk_dimensions', 'thinking_patterns', 'protective_factors', 'parent_guidance', 'alerts'] as $key) {
+        foreach (['event_blocks', 'topics', 'interests', 'risk_dimensions', 'thinking_patterns', 'protective_factors', 'parent_guidance', 'alerts'] as $key) {
             if (isset($analysis[$key]) && !is_array($analysis[$key])) {
                 $errors[] = "{$key} must be an array.";
             }
@@ -1365,7 +1367,7 @@ class ChildReportService
         $analysis = $this->buildAnalysis($child, $summary, $scope, $readiness, $reportMessages, $allowLlm);
 
         return [
-            'version' => 3,
+            'version' => 4,
             'status' => !$readiness['eligible']
                 ? 'insufficient_data'
                 : ($readiness['can_generate'] ? 'ready' : 'awaiting_increment'),
@@ -2012,6 +2014,7 @@ class ChildReportService
             'sample_confidence' => $readiness['confidence'],
             'disclaimer' => 'This report summarizes recent chat patterns only. It is not a clinical diagnosis and should be read alongside offline behavior.',
             'topic_overview' => $topicOverview,
+            'event_blocks' => [],
             'topics' => $topics,
             'interests' => array_map(
                 fn(array $topic) => [
@@ -2039,6 +2042,7 @@ class ChildReportService
             'sample_confidence' => $readiness['confidence'] ?? 'none',
             'disclaimer' => 'This report is not a diagnosis. It simply reflects that there was not enough recent child-authored chat in the selected window to analyze content patterns.',
             'topic_overview' => 'There were no recent child-authored messages in the selected time window.',
+            'event_blocks' => [],
             'topics' => [],
             'interests' => [],
             'emotional_overview' => [
@@ -2170,7 +2174,7 @@ class ChildReportService
         $payload = [
             'model' => $model,
             'temperature' => 0.2,
-            'max_tokens' => 1800,
+            'max_tokens' => 2600,
             'stream' => false,
             'messages' => [
                 [
@@ -2259,6 +2263,15 @@ class ChildReportService
             'For aggression or violence-related content, distinguish brief frustration, fantasy, roleplay, or hypothetical language from repeated hostile intent, target fixation, planning, access-to-weapon talk, or escalation across days.',
             'For self-harm or hopelessness content, distinguish passing dramatic language from repeated or direct safety concern; elevate only when the transcript provides meaningful evidence.',
             'Younger children can use exaggerated language loosely. Do not over-interpret single dramatic phrases without corroborating context.',
+            'Keep the existing top-level summary fields focused on the macro overall picture across the whole report window.',
+            'Also return event_blocks as a separate event-by-event breakdown of what concrete situations were discussed in the current report scope.',
+            'An event can be a question, a personal update, a disclosure, a conflict, a coping discussion, or a situation the child mainly shared without explicitly asking a question.',
+            'Group related turns into one event. Do not create one event per message. Merge nearby turns when they are about the same situation or concern.',
+            'Order event_blocks by when the event first appears in the transcript.',
+            'Every event block must stay privacy-preserving: remove names, school or class identifiers, places, dates, handles, contact details, and any unique facts that could reconstruct the original situation.',
+            'For child_focus, describe what the child was asking, worrying about, deciding, or sharing. If the child mainly shared and did not ask a question, summarize the core situation or need instead.',
+            'For assistant_strategy, summarize the response approach abstractly, such as validation, clarification, reframing, coping planning, encouragement to seek adult support, boundary-setting, or safety-oriented checking.',
+            'For assistant_response_summary, describe at a high level how the assistant responded and the rough handling outcome, without revealing distinctive transcript details.',
             'Separate concerns into: risk dimensions, thinking patterns, protective factors, strengths, watch points, and parent guidance.',
             'If evidence is weak, lower confidence and say so clearly.',
             'Treat roleplay, hypothetical questions, jokes, and one-off curiosity carefully; do not overstate them as real-world intent without stronger evidence.',
@@ -2271,6 +2284,7 @@ class ChildReportService
             'sample_confidence: "none"|"low"|"medium"|"high"',
             'disclaimer: string',
             'topic_overview: string',
+            'event_blocks: array of {event_title:string, event_type:"question"|"sharing"|"mixed", child_focus:string, event_summary:string, assistant_strategy:string, assistant_response_summary:string}',
             'topics: array of {name:string, summary:string}',
             'interests: array of {name:string, why_it_matters:string}',
             'emotional_overview: {summary:string, supporting_signals:string[]}',
@@ -2401,6 +2415,8 @@ class ChildReportService
                 $analysis[$listKey] = $fallback[$listKey];
             }
         }
+
+        $analysis['event_blocks'] = $this->normalizeEventBlocks($analysis['event_blocks'] ?? ($fallback['event_blocks'] ?? []));
 
         if (!isset($analysis['wellbeing']) || !is_array($analysis['wellbeing'])) {
             $analysis['wellbeing'] = $fallback['wellbeing'];
@@ -2588,9 +2604,54 @@ class ChildReportService
 
         $sanitized = str_replace(['“', '”'], '', $sanitized ?? $value);
         $sanitized = preg_replace("/(?<!\\pL)'|'(?!\\pL)/u", '', $sanitized ?? $value);
+        $sanitized = preg_replace('/https?:\/\/\S+/iu', '[redacted link]', $sanitized ?? $value);
+        $sanitized = preg_replace('/\b[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.[\p{L}]{2,}\b/u', '[redacted email]', $sanitized ?? $value);
+        $sanitized = preg_replace('/(?<!\w)@[A-Za-z0-9_]{2,}\b/u', '[redacted handle]', $sanitized ?? $value);
+        $sanitized = preg_replace('/(?<!\d)(?:\+?\d[\d\s().-]{6,}\d)(?!\d)/u', '[redacted number]', $sanitized ?? $value);
         $sanitized = preg_replace('/\s{2,}/u', ' ', $sanitized ?? $value);
 
         return trim((string) ($sanitized ?? $value));
+    }
+
+    private function normalizeEventBlocks($eventBlocks): array
+    {
+        if (!is_array($eventBlocks)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach (array_values($eventBlocks) as $index => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $eventType = (string) ($item['event_type'] ?? 'mixed');
+            if (!in_array($eventType, ['question', 'sharing', 'mixed'], true)) {
+                $eventType = 'mixed';
+            }
+
+            $normalizedItem = [
+                'event_title' => trim((string) ($item['event_title'] ?? $item['title'] ?? ('Event ' . ($index + 1)))),
+                'event_type' => $eventType,
+                'child_focus' => trim((string) ($item['child_focus'] ?? $item['child_question'] ?? $item['child_situation'] ?? '')),
+                'event_summary' => trim((string) ($item['event_summary'] ?? $item['summary'] ?? '')),
+                'assistant_strategy' => trim((string) ($item['assistant_strategy'] ?? $item['response_strategy'] ?? '')),
+                'assistant_response_summary' => trim((string) ($item['assistant_response_summary'] ?? $item['ai_response_summary'] ?? $item['response_summary'] ?? '')),
+            ];
+
+            if (
+                $normalizedItem['child_focus'] === ''
+                && $normalizedItem['event_summary'] === ''
+                && $normalizedItem['assistant_strategy'] === ''
+                && $normalizedItem['assistant_response_summary'] === ''
+            ) {
+                continue;
+            }
+
+            $normalized[] = $normalizedItem;
+        }
+
+        return array_slice($normalized, 0, 8);
     }
 
     private function calculateAgeYears(?string $birthDate): ?int

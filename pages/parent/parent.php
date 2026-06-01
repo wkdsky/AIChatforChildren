@@ -635,6 +635,57 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       margin-bottom: 18px;
     }
 
+    .prompt-editor-shell {
+      margin-bottom: 18px;
+      padding: 16px;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    }
+
+    .prompt-editor-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .prompt-editor-title {
+      margin: 0 0 4px;
+      color: #111827;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .prompt-editor-meta {
+      margin: 0;
+      color: #6b7280;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .prompt-editor-textarea {
+      width: 100%;
+      min-height: 260px;
+      resize: vertical;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid #d1d5db;
+      background: #fff;
+      color: #111827;
+      font-size: 14px;
+      line-height: 1.65;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace;
+    }
+
+    .prompt-editor-textarea:disabled {
+      background: #f8fafc;
+      color: #94a3b8;
+      cursor: wait;
+    }
+
     .report-modal-content {
       width: min(97vw, 1520px);
       max-width: 1520px;
@@ -1344,6 +1395,80 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       font-size: 14px;
     }
 
+    .report-event-stack {
+      display: grid;
+      gap: 12px;
+    }
+
+    .report-event-card {
+      padding: 14px;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      border: 1px solid #dbeafe;
+    }
+
+    .report-event-topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .report-event-index {
+      color: #1d4ed8;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .report-event-type {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: #e2e8f0;
+      color: #334155;
+    }
+
+    .report-event-type.question {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+
+    .report-event-type.sharing {
+      background: #dcfce7;
+      color: #047857;
+    }
+
+    .report-event-type.mixed {
+      background: #ede9fe;
+      color: #6d28d9;
+    }
+
+    .report-event-card h5 {
+      margin: 0 0 10px;
+      color: #0f172a;
+      font-size: 15px;
+    }
+
+    .report-event-row {
+      color: #475569;
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    .report-event-row + .report-event-row {
+      margin-top: 8px;
+    }
+
     .report-risk-row {
       display: flex;
       gap: 10px;
@@ -1738,6 +1863,30 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="child_id" id="manage_child_id">
 
+          <section class="prompt-editor-shell">
+            <div class="prompt-editor-header">
+              <div>
+                <h3 class="prompt-editor-title">Private Prompt</h3>
+                <p id="manageChildPromptMeta" class="prompt-editor-meta">Loading the child-specific prompt...</p>
+              </div>
+              <button type="button" id="restoreChildPromptBtn" class="ghost-btn" onclick="restoreDefaultChildPrompt()" disabled>
+                Restore Default
+              </button>
+            </div>
+
+            <div class="form-group full" style="margin-bottom: 0;">
+              <label for="manage_prompt_content">Prompt Content</label>
+              <textarea
+                name="prompt_content"
+                id="manage_prompt_content"
+                class="prompt-editor-textarea"
+                rows="12"
+                disabled
+              ></textarea>
+              <small class="error-text" id="prompt_contentManageError"></small>
+            </div>
+          </section>
+
           <div class="form-grid">
             <div class="form-group">
               <label>Allowed Start Time</label>
@@ -1780,7 +1929,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
             </div>
           </div>
 
-          <button type="submit" class="btn">Save Settings</button>
+          <button type="submit" id="manageChildSaveBtn" class="btn">Save Settings</button>
         </form>
       </div>
     </div>
@@ -1911,6 +2060,7 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
 
   <script>
     const CHILDREN_API_URL = '<?= Helper::url('api/parent/children') ?>';
+    const CHILD_PROMPT_API_URL = '<?= Helper::url('api/parent/children/prompt') ?>';
     const UPDATE_CHILD_API_URL = '<?= Helper::url('api/parent/children/update') ?>';
     const DELETE_CHILD_API_URL = '<?= Helper::url('api/parent/children/delete') ?>';
     const TOGGLE_CHILD_LOGIN_API_URL = '<?= Helper::url('api/parent/children/toggle-login') ?>';
@@ -1928,6 +2078,12 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
     let pageAlertTimeout = null;
     let reportToastTimeout = null;
     let childrenState = [];
+    let childPromptEditorState = {
+      childId: null,
+      defaultPromptContent: '',
+      isCustomized: false,
+      loading: false
+    };
     let childNameCheckTimer = null;
     let childNameCheckController = null;
     const PRESET_AUTO_REPORT_DAYS = ['7', '15', '30'];
@@ -2309,11 +2465,18 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       clearChildErrors('manage');
       populateManageChildModal(child);
       document.getElementById('manageChildModal').style.display = 'block';
+      loadChildPromptEditor(child.id);
     }
 
     function closeManageChildModal() {
       document.getElementById('manageChildModal').style.display = 'none';
       clearChildErrors('manage');
+      childPromptEditorState = {
+        childId: null,
+        defaultPromptContent: '',
+        isCustomized: false,
+        loading: false
+      };
     }
 
     function showChildReportModal(childId) {
@@ -2466,6 +2629,102 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       const toggleButton = document.getElementById('manageChildToggleLoginBtn');
       toggleButton.textContent = getLoginToggleButtonLabel(child.login_disabled);
       toggleButton.className = child.login_disabled ? 'ghost-btn' : 'warning-btn';
+
+      childPromptEditorState = {
+        childId: child.id,
+        defaultPromptContent: '',
+        isCustomized: false,
+        loading: true
+      };
+      document.getElementById('manage_prompt_content').value = '';
+      document.getElementById('manage_prompt_content').disabled = true;
+      document.getElementById('restoreChildPromptBtn').disabled = true;
+      document.getElementById('manageChildSaveBtn').disabled = true;
+      document.getElementById('manageChildPromptMeta').textContent = 'Loading the child-specific prompt...';
+    }
+
+    function formatPromptUpdatedAt(value) {
+      return value ? formatReportDate(value) : 'Not saved yet';
+    }
+
+    function buildPromptMetaText(promptProfile) {
+      const modeLabel = promptProfile && promptProfile.is_customized ? 'Customized prompt' : 'Default private prompt';
+      const ageBand = promptProfile && promptProfile.source_age_band ? promptProfile.source_age_band.replace('_', '-') : '6-12';
+      const updatedAt = formatPromptUpdatedAt(promptProfile && promptProfile.updated_at);
+      return `${modeLabel} · source age band ${ageBand} · updated ${updatedAt}`;
+    }
+
+    async function loadChildPromptEditor(childId) {
+      const numericId = Number(childId);
+      if (!numericId) {
+        return;
+      }
+
+      childPromptEditorState = {
+        childId: numericId,
+        defaultPromptContent: '',
+        isCustomized: false,
+        loading: true
+      };
+
+      const promptField = document.getElementById('manage_prompt_content');
+      const restoreButton = document.getElementById('restoreChildPromptBtn');
+      const saveButton = document.getElementById('manageChildSaveBtn');
+      const meta = document.getElementById('manageChildPromptMeta');
+
+      promptField.value = '';
+      promptField.disabled = true;
+      restoreButton.disabled = true;
+      saveButton.disabled = true;
+      meta.textContent = 'Loading the child-specific prompt...';
+
+      try {
+        const response = await fetch(`${CHILD_PROMPT_API_URL}?child_id=${encodeURIComponent(numericId)}`);
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || result.error || 'Failed to load child private prompt');
+        }
+
+        if (childPromptEditorState.childId !== numericId) {
+          return;
+        }
+
+        const promptProfile = result.prompt_profile || {};
+        childPromptEditorState = {
+          childId: numericId,
+          defaultPromptContent: promptProfile.default_prompt_content || '',
+          isCustomized: !!promptProfile.is_customized,
+          loading: false
+        };
+
+        promptField.value = promptProfile.prompt_content || promptProfile.default_prompt_content || '';
+        promptField.disabled = false;
+        restoreButton.disabled = !(promptProfile.default_prompt_content || '');
+        saveButton.disabled = false;
+        meta.textContent = buildPromptMetaText(promptProfile);
+      } catch (error) {
+        console.error(error);
+        if (childPromptEditorState.childId !== numericId) {
+          return;
+        }
+
+        childPromptEditorState.loading = false;
+        promptField.disabled = true;
+        restoreButton.disabled = true;
+        saveButton.disabled = false;
+        meta.textContent = 'Unable to load the child-specific prompt right now.';
+        showPageAlert(error.message || 'Failed to load child private prompt.', 'error');
+      }
+    }
+
+    function restoreDefaultChildPrompt() {
+      if (!childPromptEditorState.defaultPromptContent) {
+        return;
+      }
+
+      document.getElementById('manage_prompt_content').value = childPromptEditorState.defaultPromptContent;
+      document.getElementById('manageChildPromptMeta').textContent = 'Default prompt restored locally. Save settings to apply it.';
+      setFieldMessage('prompt_contentManageError', '');
     }
 
     function showAlert(message, type = 'success') {
@@ -2842,6 +3101,46 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       }).join('');
     }
 
+    function formatEventTypeLabel(type) {
+      switch (type) {
+        case 'question':
+          return 'Question';
+        case 'sharing':
+          return 'Sharing';
+        default:
+          return 'Mixed';
+      }
+    }
+
+    function renderEventBlocks(items, emptyText = 'No event breakdown was generated for this AI report.') {
+      if (!Array.isArray(items) || items.length === 0) {
+        return `<div class="report-list-item">${escapeHtml(emptyText)}</div>`;
+      }
+
+      return `<div class="report-event-stack">${items.map((item, index) => {
+        const eventType = ['question', 'sharing', 'mixed'].includes(item && item.event_type) ? item.event_type : 'mixed';
+        const title = item && item.event_title ? item.event_title : `Event ${index + 1}`;
+        const childFocus = item && item.child_focus ? item.child_focus : 'No child focus summary available.';
+        const eventSummary = item && item.event_summary ? item.event_summary : 'No event summary available.';
+        const assistantStrategy = item && item.assistant_strategy ? item.assistant_strategy : 'No assistant strategy summary available.';
+        const assistantResponseSummary = item && item.assistant_response_summary ? item.assistant_response_summary : 'No assistant response summary available.';
+
+        return `
+          <article class="report-event-card">
+            <div class="report-event-topline">
+              <span class="report-event-index">Event ${index + 1}</span>
+              <span class="report-event-type ${escapeHtml(eventType)}">${escapeHtml(formatEventTypeLabel(eventType))}</span>
+            </div>
+            <h5>${escapeHtml(title)}</h5>
+            <div class="report-event-row"><strong>Child focus:</strong> ${escapeHtml(childFocus)}</div>
+            <div class="report-event-row"><strong>Event summary:</strong> ${escapeHtml(eventSummary)}</div>
+            <div class="report-event-row"><strong>AI strategy:</strong> ${escapeHtml(assistantStrategy)}</div>
+            <div class="report-event-row"><strong>AI response:</strong> ${escapeHtml(assistantResponseSummary)}</div>
+          </article>
+        `;
+      }).join('')}</div>`;
+    }
+
     function renderRiskDimensionList(items, emptyText) {
       if (!Array.isArray(items) || items.length === 0) {
         return `<div class="report-list-item">${escapeHtml(emptyText)}</div>`;
@@ -3021,6 +3320,8 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
 
     function renderContentAnalysis(analysis, readiness) {
       const riskClass = riskClassFromAnalysis(analysis);
+      const eventBlocks = Array.isArray(analysis.event_blocks) ? analysis.event_blocks : [];
+      const showEventBlocks = analysis && analysis.source === 'llm_transcript';
       const interests = Array.isArray(analysis.interests) ? analysis.interests : [];
       const topics = Array.isArray(analysis.topics) ? analysis.topics : [];
       const emotional = analysis.emotional_overview || {};
@@ -3043,6 +3344,13 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
             <h4>${escapeHtml(analysis.headline || 'Recent wellbeing summary')}</h4>
             <p>${escapeHtml(analysis.disclaimer || 'This report summarizes recent patterns only and is not a diagnosis.')}</p>
           </article>
+
+          ${showEventBlocks ? `
+            <article class="report-analysis-card full">
+              <h4>Event Breakdown</h4>
+              ${renderEventBlocks(eventBlocks)}
+            </article>
+          ` : ''}
 
           <article class="report-analysis-card">
             <h4>Topic Overview</h4>
@@ -3974,6 +4282,11 @@ $appTimezone = Config::get('APP_TIMEZONE', Config::get('app.timezone', 'Asia/Sha
       clearChildErrors('manage');
       syncTimeHiddenValue('allowed_login_start');
       syncTimeHiddenValue('allowed_login_end');
+
+      if (childPromptEditorState.loading) {
+        showPageAlert('Child private prompt is still loading. Please wait a moment.', 'error');
+        return;
+      }
 
       const formData = new FormData(this);
 
